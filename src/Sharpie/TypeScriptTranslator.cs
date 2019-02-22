@@ -11,30 +11,45 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Sharpie
 {
+    public class TranslationResult
+    {
+        public string Text { get; }
+        public IReadOnlyList<Diagnostic> Diagnostics { get; }
+
+        public TranslationResult(string text, IReadOnlyList<Diagnostic> diagnostics)
+        {
+            this.Text = text;
+            this.Diagnostics = diagnostics;
+        }
+    }
+
     public class TypeScriptTranslator
     {
-        public static string Translate(CSharpCompilation compilation, List<string> diagnostics)
+        public static TranslationResult Translate(CSharpCompilation compilation)
         {
             var writer = new StringWriter();
+            var diagnostics = new List<Diagnostic>();
             var translator = new Translator(compilation, writer, diagnostics);
 
+            // TODO: make this organized by symbol table to support unifying partial classes, etc.
             foreach (var tree in compilation.SyntaxTrees)
             {
                 translator.Visit(tree.GetRoot());
             }
 
-            return writer.ToString();
+            return new TranslationResult(writer.ToString(), diagnostics);
         }
 
-        private static string Translate(CSharpCompilation compilation, SyntaxNode node, List<string> diagnostics = null)
+        private static TranslationResult Translate(CSharpCompilation compilation, SyntaxNode node)
         {
             var writer = new StringWriter();
-            var translator = new Translator(compilation, writer);
+            var diagnostics = new List<Diagnostic>();
+            var translator = new Translator(compilation, writer, diagnostics);
             translator.Visit(node);
-            return writer.ToString();
+            return new TranslationResult(writer.ToString(), diagnostics);
         }
 
-        public static string TranslateCompilationUnit(string csharpText, IEnumerable<MetadataReference> references)
+        public static TranslationResult TranslateCompilationUnit(string csharpText, IEnumerable<MetadataReference> references)
         {
             var tree = CSharpSyntaxTree.ParseText(csharpText);
             var compilation = CSharpCompilation.Create("source", new[] { tree }, references);
@@ -42,7 +57,7 @@ namespace Sharpie
             return Translate(compilation, compUnit);
         }
 
-        public static string TranslateExpression(string csharpExpression, IEnumerable<MetadataReference> references)
+        public static TranslationResult TranslateExpression(string csharpExpression, IEnumerable<MetadataReference> references)
         {
             var csharpText = $"using System; public class Test {{ public void M() {{ var v = {csharpExpression}; }} }}";
             var tree = CSharpSyntaxTree.ParseText(csharpText);
@@ -52,7 +67,7 @@ namespace Sharpie
             return Translate(compilation, expr);
         }
 
-        public static string TranslateStatement(string csharpStatement, IEnumerable<MetadataReference> references)
+        public static TranslationResult TranslateStatement(string csharpStatement, IEnumerable<MetadataReference> references)
         {
             var csharpText = $"using System; public class Test {{ public void M() {{ {csharpStatement}; }} }}";
             var tree = CSharpSyntaxTree.ParseText(csharpText);
@@ -62,7 +77,7 @@ namespace Sharpie
             return Translate(compilation, statement);
         }
 
-        public static string TranslateType(string csharpType, IEnumerable<MetadataReference> references)
+        public static TranslationResult TranslateType(string csharpType, IEnumerable<MetadataReference> references)
         {
             var csharpText = $"using System; public class Test {{ public {csharpType} M() {{ }} }}";
             var tree = CSharpSyntaxTree.ParseText(csharpText);
@@ -70,9 +85,10 @@ namespace Sharpie
             var methodDecl = (MethodDeclarationSyntax)tree.GetRoot().DescendantNodes().First(n => n.IsKind(SyntaxKind.MethodDeclaration));
             var type = methodDecl.ReturnType;
             var writer = new StringWriter();
-            var translator = new Translator(compilation, writer);
+            var diagnostics = new List<Diagnostic>();
+            var translator = new Translator(compilation, writer, diagnostics);
             translator.VisitType(type);
-            return writer.ToString().Trim();
+            return new TranslationResult(writer.ToString().Trim(), diagnostics);
         }
 
         private class Translator : CSharpSyntaxVisitor
@@ -80,13 +96,13 @@ namespace Sharpie
             private readonly CSharpCompilation _compilation;
             private readonly TypeScriptWriter _writer;
             private readonly Dictionary<SyntaxTree, SemanticModel> models = new Dictionary<SyntaxTree, SemanticModel>();
-            private readonly List<string> _diagnostics;
+            private readonly List<Diagnostic> _diagnostics;
 
-            public Translator(CSharpCompilation compilation, TextWriter writer, List<string> diagnostics = null)
+            public Translator(CSharpCompilation compilation, TextWriter writer, List<Diagnostic> diagnostics)
             {
                 _compilation = compilation;
                 _writer = new TypeScriptWriter(writer);
-                _diagnostics = diagnostics ?? new List<string>();
+                _diagnostics = diagnostics;
             }
 
             private SemanticModel GetModel(SyntaxTree tree)
@@ -195,9 +211,23 @@ namespace Sharpie
             #endregion
 
 
+            #region Diagnostics
+            public static readonly DiagnosticDescriptor SyntaxNotSupported = new DiagnosticDescriptor(
+                "CS2TS001", "Syntax Not Supported", "The C# syntax '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+            private static Diagnostic GetSyntaxNotSupported(Location location, string syntax)
+            {
+                return Diagnostic.Create(SyntaxNotSupported, location, syntax);
+            }
+            #endregion
+
+
             public override void DefaultVisit(SyntaxNode node)
             {
-                throw new NotSupportedException($"The C# node type '{node.Kind()}' is not supported.");
+                if (node != null)
+                {
+                    _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.Kind().ToString()));
+                }
             }
 
             private void VisitList<T>(SyntaxList<T> list) where T : SyntaxNode
@@ -255,7 +285,7 @@ namespace Sharpie
 
             public override void VisitClassDeclaration(ClassDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers);
+                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                 WriteToken(node.Keyword);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -268,7 +298,7 @@ namespace Sharpie
 
             public override void VisitStructDeclaration(StructDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers);
+                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                 WriteToken(node.Keyword.LeadingTrivia, "class", node.Keyword.TrailingTrivia);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -281,7 +311,7 @@ namespace Sharpie
 
             public override void VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers);
+                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                 WriteToken(node.Keyword);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -307,23 +337,48 @@ namespace Sharpie
 
             public override void VisitBaseList(BaseListSyntax node)
             {
-                var baseType = node.Types.FirstOrDefault(t => GetSymbol(t.Type) is INamedTypeSymbol nt && nt.TypeKind != TypeKind.Interface);
-                if (baseType != null)
-                {
-                    WriteTrivia(node.ColonToken.LeadingTrivia);
-                    WriteToken("extends");
-                    WriteTrivia(node.ColonToken.TrailingTrivia);
+                var interfaceKeyword = "implements";
 
-                    VisitType(baseType.Type);
+                if (node.Parent is ClassDeclarationSyntax)
+                {
+                    var baseType = node.Types.FirstOrDefault(t => GetSymbol(t.Type) is INamedTypeSymbol nt && nt.TypeKind != TypeKind.Interface);
+                    if (baseType != null)
+                    {
+                        WriteTrivia(node.ColonToken.LeadingTrivia, squelch: true);
+                        WriteToken("extends");
+                        WriteTrivia(node.ColonToken.TrailingTrivia, squelch: true);
+
+                        VisitType(baseType.Type);
+                    }
+                }
+                else if (node.Parent is InterfaceDeclarationSyntax)
+                {
+                    interfaceKeyword = "extends";
+                }
+
+                var interfaces = node.Types.Where(t => GetSymbol(t.Type) is INamedTypeSymbol nt && nt.TypeKind == TypeKind.Interface).ToList();
+                if (interfaces.Count > 0)
+                {
+                    WriteTrivia(node.ColonToken.LeadingTrivia, squelch: true);
+                    WriteToken(interfaceKeyword);
+                    WriteTrivia(node.ColonToken.TrailingTrivia, squelch: true);
+
+                    for (int i = 0; i < interfaces.Count; i++)
+                    {
+                        var iface = interfaces[i];
+                        if (i > 0)
+                            WriteToken(",");
+                        VisitType(iface.Type);
+                    }
                 }
             }
 
-            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, bool defaultIsPrivate = true)
+            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, bool isTypeMember)
             {
                 var hasAccessModifiers = modifiers.Any(m => IsAccessModifier(m));
                 var hasModifiers = modifiers.Count > 0;
 
-                if (!hasAccessModifiers && defaultIsPrivate)
+                if (!hasAccessModifiers && isTypeMember)
                 {
                     WriteToken("private");
                 }
@@ -372,18 +427,37 @@ namespace Sharpie
 
             public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers);
+                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
 
                 WriteToken(node.Identifier.LeadingTrivia, "constructor", node.Identifier.TrailingTrivia);
 
                 Visit(node.ParameterList);
+
+                if (node.ExpressionBody != null)
+                {
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken);
+                }
+                else
+                {
+                    Visit(node.Body);
+                    WriteToken(node.SemicolonToken);
+                }
+            }
+
+            private void VisitExpressionBody(ArrowExpressionClauseSyntax body, SyntaxToken semicolonToken)
+            {
+                WriteTrivia(body.Expression.GetLeadingTrivia(), squelch: true);
+                WriteTrivia("{");
+                Visit(body.Expression);
+                WriteToken(semicolonToken);
+                WriteTrivia("}");
             }
 
             public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
             {
                 WriteTrivia(First(node.Modifiers.GetLeadingTrivia(), node.ReturnType.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
 
-                WriteDeclarationModifiers(node.Modifiers);
+                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                 WriteTrivia(node.ReturnType.GetLeadingTrivia());
                 WriteToken(node.Identifier);
 
@@ -395,6 +469,7 @@ namespace Sharpie
                     Visit(node.ParameterList);
 
                     WriteToken(":");
+                    Squelch(node.ReturnType.GetTrailingTrivia());
                     VisitType(node.ReturnType);
 
                     Unsquelch(tt);
@@ -405,13 +480,13 @@ namespace Sharpie
                     Visit(node.ParameterList);
                 }
 
-                if (node.Body != null)
+                if (node.ExpressionBody != null)
+                {
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken);
+                }
+                else
                 {
                     Visit(node.Body);
-                }
-                else if (node.ExpressionBody != null)
-                {
-                    Visit(node.ExpressionBody);
                     WriteToken(node.SemicolonToken);
                 }
             }
@@ -450,20 +525,29 @@ namespace Sharpie
                             break;
 
                         default:
-                            throw new NotSupportedException($"The C# keyword '{mod.Kind()}' is not supported for parameters.");
+                            _diagnostics.Add(GetSyntaxNotSupported(mod.GetLocation(), mod.Text));
+                            break;
                     }
                 }
             }
 
             public override void VisitFieldDeclaration(FieldDeclarationSyntax node)
             {
-                foreach (var declarator in node.Declaration.Variables)
+                Squelch(node.Declaration.Type.GetTrailingTrivia());
+
+                // TODO: error when there is more than one variable.
+
+                if (node.Declaration.Variables.Count > 0)
                 {
-                    WriteDeclarationModifiers(node.Modifiers);
+                    var declarator = node.Declaration.Variables[0];
+                    WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                     WriteToken(declarator.Identifier.Text);
                     WriteToken(":");
-                    VisitType(node.Declaration.Type); // TODO: deal with trivia 
+                    VisitType(node.Declaration.Type);
+                    Visit(declarator.Initializer);
                 }
+
+                WriteToken(node.SemicolonToken);
             }
             #endregion
 
@@ -771,7 +855,9 @@ namespace Sharpie
                         break;
 
                     default:
-                        throw new NotSupportedException();
+                        _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
+                        WriteToken(node.ToString());
+                        break;
                 }
             }
 
@@ -1010,7 +1096,9 @@ namespace Sharpie
                         break;
 
                     default:
-                        throw new NotSupportedException();
+                        _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
+                        WriteToken(node.ToString());
+                        break;
                 }
             }
 

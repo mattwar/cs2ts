@@ -17,13 +17,16 @@ namespace Sharpie
 
         public void WriteToken(string token)
         {
-            if (RequiresInjectedSpace(_last, token))
+            if (token.Length > 0)
             {
-                _writer.Write(" ");
-            }
+                if (RequiresInjectedSpace(_last, token))
+                {
+                    _writer.Write(" ");
+                }
 
-            _writer.Write(token);
-            _last = token;
+                _writer.Write(token);
+                _last = token;
+            }
         }
 
         private static bool RequiresInjectedSpace(string prev, string next)
@@ -78,6 +81,8 @@ namespace Sharpie
                 case "|=":
                 case "^=":
                 case "=>":
+                case "{":
+                case "}":
                     return true;
             }
 
@@ -103,6 +108,8 @@ namespace Sharpie
                 case "|=":
                 case "^=":
                 case "=>":
+                case "{":
+                case "}":
                     return true;
             }
 

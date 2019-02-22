@@ -19,19 +19,18 @@ namespace cs2ts
             var projectInfo = CommandLineProject.CreateProjectInfo("cs2ts", LanguageNames.CSharp, args, Environment.CurrentDirectory, workspace);
             var project = workspace.AddProject(projectInfo);
             var compilation = (CSharpCompilation)project.GetCompilationAsync().GetAwaiter().GetResult();
-            var diagnostics = new List<string>();
-            var typeScriptText = TypeScriptTranslator.Translate(compilation, diagnostics);
+            var result = TypeScriptTranslator.Translate(compilation);
 
-            if (diagnostics.Count > 0)
+            if (result.Diagnostics.Count > 0)
             {
-                foreach (var dx in diagnostics)
+                foreach (var dx in result.Diagnostics)
                 {
                     Console.Out.WriteLine(dx);
                 }
             }
             else
             {
-                Console.Out.Write(typeScriptText);
+                Console.Out.Write(result.Text);
             }
         }
     }

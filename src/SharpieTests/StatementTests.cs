@@ -54,7 +54,7 @@ namespace SharpieTests
         public void TestWhileStatement()
         {
             TestStatement("while (e) { s; }", "while (e) { s; }");
-            TestStatement("while (e) s;", "while (e) {s;}");
+            TestStatement("while (e) s;", "while (e) { s; }");
         }
 
         [TestMethod]
@@ -67,7 +67,7 @@ namespace SharpieTests
         public void TestForStatement()
         {
             TestStatement("for (int x = 0; x < 10; x++) { }", "for (let x = 0; x < 10; x++) { }");
-            TestStatement("for (int x = 0; x < 10; x++) s;", "for (let x = 0; x < 10; x++) {s;}");
+            TestStatement("for (int x = 0; x < 10; x++) s;", "for (let x = 0; x < 10; x++) { s; }");
         }
 
         [TestMethod]

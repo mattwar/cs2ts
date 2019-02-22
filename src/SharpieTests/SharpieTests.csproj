@@ -217,6 +217,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DeclarationTests.cs" />
     <Compile Include="ExpressionTests.cs" />
     <Compile Include="StatementTests.cs" />
     <Compile Include="TestBase.cs" />

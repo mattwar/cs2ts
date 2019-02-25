@@ -79,17 +79,39 @@ namespace Sharpie
 
         public static TranslationResult TranslateType(string csharpType, IEnumerable<MetadataReference> references)
         {
-            var csharpText = $"using System; public class Test {{ public {csharpType} M() {{ }} }}";
+            var csharpText = $"using System; public class Test {{ public void M() {{ M<{csharpType}>(); }} }}";
             var tree = CSharpSyntaxTree.ParseText(csharpText);
             var compilation = CSharpCompilation.Create("source", new[] { tree }, references);
-            var methodDecl = (MethodDeclarationSyntax)tree.GetRoot().DescendantNodes().First(n => n.IsKind(SyntaxKind.MethodDeclaration));
-            var type = methodDecl.ReturnType;
-            var writer = new StringWriter();
-            var diagnostics = new List<Diagnostic>();
-            var translator = new Translator(compilation, writer, diagnostics);
-            translator.VisitType(type);
-            return new TranslationResult(writer.ToString().Trim(), diagnostics);
+            var gname = (GenericNameSyntax)tree.GetRoot().DescendantNodes().First(n => n.IsKind(SyntaxKind.GenericName));
+            var type = gname.TypeArgumentList.Arguments[0];
+            return Translate(compilation, type);
         }
+
+        #region Diagnostics
+        public static readonly DiagnosticDescriptor SyntaxNotSupported = new DiagnosticDescriptor(
+            "CS2TS001", "Syntax Not Supported", "The syntax '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+        public static readonly DiagnosticDescriptor TypeNotSupported = new DiagnosticDescriptor(
+            "CS2TS002", "Type Not Supported", "The type '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+        public static readonly DiagnosticDescriptor MethodNotSupported = new DiagnosticDescriptor(
+            "CS2TS003", "Method Not Supported", "The API method '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
+
+        public static Diagnostic GetSyntaxNotSupported(Location location, string syntax)
+        {
+            return Diagnostic.Create(SyntaxNotSupported, location, syntax);
+        }
+
+        public static Diagnostic GetTypeNotSupported(Location location, string typeName)
+        {
+            return Diagnostic.Create(TypeNotSupported, location, typeName);
+        }
+
+        public static Diagnostic GetMethodNotSupported(Location location, string methodName)
+        {
+            return Diagnostic.Create(MethodNotSupported, location, methodName);
+        }
+        #endregion
 
         private class Translator : CSharpSyntaxVisitor
         {
@@ -132,6 +154,19 @@ namespace Sharpie
 
 
             #region Writing
+            private SyntaxTriviaList First(params SyntaxTriviaList?[] candidates)
+            {
+                foreach (var trivia in candidates)
+                {
+                    if (trivia != null && trivia.Value.Count > 0)
+                    {
+                        return trivia.Value;
+                    }
+                }
+
+                return default(SyntaxTriviaList);
+            }
+
             public void WriteToken(SyntaxToken token)
             {
                 WriteTrivia(token.LeadingTrivia);
@@ -151,13 +186,35 @@ namespace Sharpie
                 WriteTrivia(trailingTrivia);
             }
 
-            public void WriteTrivia(SyntaxTriviaList list, bool squelch = false)
+            public void WriteLine()
+            {
+                _writer.WriteLine();
+            }
+
+            public void WriteTrivia(SyntaxTriviaList list, bool squelch = false, bool lastLineOnly = false)
             {
                 if (!IsSquelched(list))
                 {
-                    foreach (var trivia in list)
+                    for (int i = lastLineOnly ? GetLastLineStart(list) : 0; i < list.Count; i++)
                     {
-                        WriteTrivia(trivia);
+                        var trivia = list[i];
+
+                        switch (trivia.Kind())
+                        {
+                            case SyntaxKind.WhitespaceTrivia:
+                            case SyntaxKind.EndOfLineTrivia:
+                            case SyntaxKind.SingleLineCommentTrivia:
+                            case SyntaxKind.MultiLineCommentTrivia:
+                                if (trivia.FullSpan.Length > 0)
+                                {
+                                    _writer.WriteTrivia(trivia.ToFullString());
+                                }
+                                break;
+
+                            default:
+                                // other trivia types not supported
+                                break;
+                        }
                     }
 
                     if (squelch)
@@ -167,17 +224,20 @@ namespace Sharpie
                 }
             }
 
-            public void WriteTrivia(SyntaxTrivia trivia)
+            private static int GetLastLineStart(SyntaxTriviaList list)
             {
-                if (trivia.FullSpan.Length > 0)
-                {
-                    WriteTrivia(trivia.ToFullString());
-                }
-            }
+                var lastLineStart = 0;
 
-            public void WriteTrivia(string trivia)
-            {
-                _writer.WriteTrivia(trivia);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var trivia = list[i];
+                    if (trivia.IsKind(SyntaxKind.EndOfLineTrivia))
+                    {
+                        lastLineStart = i + 1;
+                    }
+                }
+
+                return lastLineStart;
             }
 
             /// <summary>
@@ -210,18 +270,6 @@ namespace Sharpie
             }
             #endregion
 
-
-            #region Diagnostics
-            public static readonly DiagnosticDescriptor SyntaxNotSupported = new DiagnosticDescriptor(
-                "CS2TS001", "Syntax Not Supported", "The C# syntax '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
-
-            private static Diagnostic GetSyntaxNotSupported(Location location, string syntax)
-            {
-                return Diagnostic.Create(SyntaxNotSupported, location, syntax);
-            }
-            #endregion
-
-
             public override void DefaultVisit(SyntaxNode node)
             {
                 if (node != null)
@@ -253,28 +301,6 @@ namespace Sharpie
                 }
             }
 
-            private SyntaxTriviaList First(params SyntaxTriviaList?[] candidates)
-            {
-                foreach (var trivia in candidates)
-                {
-                    if (trivia != null && trivia.Value.Count > 0)
-                    {
-                        return trivia.Value;
-                    }
-                }
-
-                return default(SyntaxTriviaList);
-            }
-
-            private static bool IsVarType(ExpressionSyntax expr)
-            {
-                return expr is IdentifierNameSyntax id && id.Identifier.Text == "var";
-            }
-
-            private static bool IsVoidType(ExpressionSyntax expr)
-            {
-                return expr is PredefinedTypeSyntax pd && pd.Keyword.IsKind(SyntaxKind.VoidKeyword);
-            }
 
             #region Declarations
 
@@ -348,7 +374,7 @@ namespace Sharpie
                         WriteToken("extends");
                         WriteTrivia(node.ColonToken.TrailingTrivia, squelch: true);
 
-                        VisitType(baseType.Type);
+                        Visit(baseType.Type);
                     }
                 }
                 else if (node.Parent is InterfaceDeclarationSyntax)
@@ -368,7 +394,7 @@ namespace Sharpie
                         var iface = interfaces[i];
                         if (i > 0)
                             WriteToken(",");
-                        VisitType(iface.Type);
+                        Visit(iface.Type);
                     }
                 }
             }
@@ -389,24 +415,26 @@ namespace Sharpie
                     {
                         case SyntaxKind.PublicKeyword:
                             // don't write public modifier (this is default)
-                            // but write its leading trivia because it may include line start indentation
-                            WriteTrivia(mod.LeadingTrivia);
+                            break;
+
+                        case SyntaxKind.InternalKeyword:
+                            // these is no internal access, use public instead
+                            WriteToken(mod.LeadingTrivia, "public", mod.TrailingTrivia);
                             break;
 
                         case SyntaxKind.PrivateKeyword:
                         case SyntaxKind.ProtectedKeyword:
-                        case SyntaxKind.AbstractKeyword:
-                        case SyntaxKind.VirtualKeyword:
-                        case SyntaxKind.OverrideKeyword:
                         case SyntaxKind.ReadOnlyKeyword:
+                        case SyntaxKind.StaticKeyword:
+                        case SyntaxKind.AbstractKeyword:
                             WriteToken(mod);
                             break;
 
-                        case SyntaxKind.InternalKeyword:
-                            WriteTrivia(mod.LeadingTrivia);
-                            WriteToken("public");
-                            WriteTrivia(mod.TrailingTrivia);
+                        case SyntaxKind.VirtualKeyword:
+                        case SyntaxKind.OverrideKeyword:
+                            // these are implicit so dont write them
                             break;
+
                     }
                 }
             }
@@ -435,7 +463,7 @@ namespace Sharpie
 
                 if (node.ExpressionBody != null)
                 {
-                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken);
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: true);
                 }
                 else
                 {
@@ -444,13 +472,18 @@ namespace Sharpie
                 }
             }
 
-            private void VisitExpressionBody(ArrowExpressionClauseSyntax body, SyntaxToken semicolonToken)
+            private void VisitExpressionBody(ArrowExpressionClauseSyntax body, SyntaxToken semicolonToken, bool isVoid)
             {
                 WriteTrivia(body.Expression.GetLeadingTrivia(), squelch: true);
-                WriteTrivia("{");
+                WriteToken("{");
+                if (!isVoid)
+                {
+                    WriteToken("return");
+                }
                 Visit(body.Expression);
-                WriteToken(semicolonToken);
-                WriteTrivia("}");
+                WriteToken(semicolonToken.Text);
+                WriteToken("}");
+                WriteTrivia(semicolonToken.TrailingTrivia);
             }
 
             public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
@@ -470,7 +503,7 @@ namespace Sharpie
 
                     WriteToken(":");
                     Squelch(node.ReturnType.GetTrailingTrivia());
-                    VisitType(node.ReturnType);
+                    Visit(node.ReturnType);
 
                     Unsquelch(tt);
                     WriteTrivia(tt);
@@ -482,7 +515,7 @@ namespace Sharpie
 
                 if (node.ExpressionBody != null)
                 {
-                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken);
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: IsVoidType(node.ReturnType));
                 }
                 else
                 {
@@ -543,11 +576,191 @@ namespace Sharpie
                     WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
                     WriteToken(declarator.Identifier.Text);
                     WriteToken(":");
-                    VisitType(node.Declaration.Type);
+                    Visit(node.Declaration.Type);
                     Visit(declarator.Initializer);
                 }
 
                 WriteToken(node.SemicolonToken);
+            }
+
+            public override void VisitPropertyDeclaration(PropertyDeclarationSyntax node)
+            {
+                var lt = First(node.Modifiers.GetLeadingTrivia(), node.Type.GetLeadingTrivia());
+
+                if (node.ExpressionBody != null)
+                {
+                    WriteTrivia(lt, squelch: true);
+                    WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                    WriteToken("get");
+                    WriteToken(node.Identifier.Text);
+                    WriteToken("(");
+                    WriteToken(")");
+                    WriteToken(":");
+                    Squelch(node.Type.GetTrailingTrivia());
+                    Visit(node.Type);
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
+                }
+                else if (IsAutoProperty(node) && !IsAbstract(node.Modifiers))
+                {
+                    bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
+
+                    if (IsVirtual(node.Modifiers) || IsOverride(node.Modifiers) || (isReadOnly && node.Initializer == null))
+                    {
+                        // need backing field for virtual/override auto-property property
+                        var fieldName = "_" + CamelCase(node.Identifier.Text);
+
+                        WriteTrivia(lt, squelch: true);
+                        WriteToken("private");
+                        WriteToken(fieldName);
+                        WriteToken(":");
+                        Squelch(node.Type.GetTrailingTrivia());
+                        Visit(node.Type);
+                        Visit(node.Initializer);
+                        WriteToken(";");
+
+                        for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
+                        {
+                            var accessor = node.AccessorList.Accessors[i];
+                            if (accessor.IsKind(SyntaxKind.GetAccessorDeclaration))
+                            {
+                                Unsquelch(lt);
+                                WriteTrivia(lt, squelch: true);
+                                WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                                WriteToken("get");
+                                WriteToken(node.Identifier.Text);
+                                WriteToken("(");
+                                WriteToken(")");
+                                WriteToken(":");
+                                Squelch(node.Type.GetTrailingTrivia());
+                                Visit(node.Type);
+                                WriteToken("{");
+                                WriteToken("return");
+                                WriteToken(fieldName);
+                                WriteToken(";");
+                                WriteToken("}");
+                            }
+                            else
+                            {
+                                Unsquelch(lt);
+                                WriteTrivia(lt, squelch: true);
+                                WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                                WriteToken("set");
+                                WriteToken(node.Identifier.Text);
+                                WriteToken("(");
+                                WriteToken("value");
+                                WriteToken(":");
+                                Visit(node.Type);
+                                WriteToken(")");
+                                WriteToken("{");
+                                WriteToken(fieldName);
+                                WriteToken("=");
+                                WriteToken("value");
+                                WriteToken(";");
+                                WriteToken("}");
+                            }
+                        }
+                    }
+                    else 
+                    {
+                        // use fields for simple auto props
+                        WriteTrivia(lt, squelch: true);
+                        WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+
+                        if (isReadOnly)
+                        {
+                            WriteToken("readonly");
+                        }
+
+                        WriteToken(node.Identifier.Text);
+                        WriteToken(":");
+                        Squelch(node.Type.GetTrailingTrivia());
+                        Visit(node.Type);
+                        Visit(node.Initializer);
+                        WriteToken(";");
+                    }
+                }
+                else
+                {
+                    // translate accessors
+                    for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
+                    {
+                        var accessor = node.AccessorList.Accessors[i];
+
+                        Unsquelch(lt);
+                        WriteTrivia(lt, squelch: true, lastLineOnly: i > 0);
+                        WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+
+                        bool isGetter = accessor.IsKind(SyntaxKind.GetAccessorDeclaration);
+                        if (isGetter)
+                        {
+                            WriteToken("get");
+                            WriteToken(node.Identifier.Text);
+                            WriteToken("(");
+                            WriteToken(")");
+                            WriteToken(":");
+                            Squelch(node.Type.GetTrailingTrivia());
+                            Visit(node.Type);
+                        }
+                        else
+                        {
+                            WriteToken("set");
+                            WriteToken(node.Identifier.Text);
+                            WriteToken("(");
+                            WriteToken("value");
+                            WriteToken(":");
+                            Squelch(node.Type.GetTrailingTrivia());
+                            Visit(node.Type);
+                            WriteToken(")");
+                        }
+
+                        if (accessor.ExpressionBody != null)
+                        {
+                            VisitExpressionBody(accessor.ExpressionBody, accessor.SemicolonToken, isVoid: !isGetter);
+                        }
+                        else
+                        {
+                            Visit(accessor.Body);
+                            WriteToken(accessor.SemicolonToken);
+                        }
+                    }
+                }
+            }
+
+            private static string CamelCase(string text)
+            {
+                if (text.Length > 0 && !char.IsLower(text[0]))
+                {
+                    return text.Substring(0, 1).ToLower() + text.Substring(1);
+                }
+                else
+                {
+                    return text;
+                }
+            }
+
+            private static bool IsAbstract(SyntaxTokenList modifiers)
+            {
+                return modifiers.Any(m => m.IsKind(SyntaxKind.AbstractKeyword));
+            }
+
+            private static bool IsVirtual(SyntaxTokenList modifiers)
+            {
+                return modifiers.Any(m => m.IsKind(SyntaxKind.VirtualKeyword));
+            }
+
+            private static bool IsOverride(SyntaxTokenList modifiers)
+            {
+                return modifiers.Any(m => m.IsKind(SyntaxKind.OverrideKeyword));
+            }
+
+            private static bool IsAutoProperty(PropertyDeclarationSyntax prop)
+            {
+                return prop.AccessorList.Accessors.All(a => !HasBody(a));
+            }
+
+            private static bool HasBody(AccessorDeclarationSyntax acc)
+            {
+                return acc.Body != null || acc.ExpressionBody != null;
             }
             #endregion
 
@@ -773,7 +986,7 @@ namespace Sharpie
                     Squelch(node.Identifier.TrailingTrivia);
                     WriteToken(node.Identifier);
                     WriteToken(":");
-                    VisitType(node.Type);
+                    Visit(node.Type);
                 }
                 else
                 {
@@ -809,6 +1022,16 @@ namespace Sharpie
             #endregion
 
             #region Types
+            private static bool IsVarType(ExpressionSyntax expr)
+            {
+                return expr is IdentifierNameSyntax id && id.Identifier.Text == "var";
+            }
+
+            private static bool IsVoidType(ExpressionSyntax expr)
+            {
+                return expr is PredefinedTypeSyntax pd && pd.Keyword.IsKind(SyntaxKind.VoidKeyword);
+            }
+
             public override void VisitArrayType(ArrayTypeSyntax node)
             {
                 Visit(node.ElementType);
@@ -841,11 +1064,8 @@ namespace Sharpie
                     case SyntaxKind.SByteKeyword:
                     case SyntaxKind.FloatKeyword:
                     case SyntaxKind.DoubleKeyword:
-                        WriteToken(node.Keyword.LeadingTrivia, "number", node.Keyword.TrailingTrivia);
-                        break;
-
                     case SyntaxKind.CharKeyword:
-                        WriteToken(node.Keyword.LeadingTrivia, "string", node.Keyword.TrailingTrivia);
+                        WriteToken(node.Keyword.LeadingTrivia, "number", node.Keyword.TrailingTrivia);
                         break;
 
                     case SyntaxKind.ObjectKeyword:
@@ -855,7 +1075,7 @@ namespace Sharpie
                         break;
 
                     default:
-                        _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
+                        _diagnostics.Add(GetTypeNotSupported(node.GetLocation(), node.ToString()));
                         WriteToken(node.ToString());
                         break;
                 }
@@ -883,6 +1103,7 @@ namespace Sharpie
                             case SpecialType.System_Object:
                             case SpecialType.System_String:
                             case SpecialType.System_Char:
+                            case SpecialType.System_DateTime:
                                 return true;
                         }
 
@@ -923,6 +1144,7 @@ namespace Sharpie
                             case SpecialType.System_UInt64:
                             case SpecialType.System_Byte:
                             case SpecialType.System_SByte:
+                            case SpecialType.System_Char:
                                 WriteToken("number");
                                 return;
 
@@ -931,8 +1153,11 @@ namespace Sharpie
                                 return;
 
                             case SpecialType.System_String:
-                            case SpecialType.System_Char:
                                 WriteToken("string");
+                                return;
+
+                            case SpecialType.System_DateTime:
+                                WriteToken("Date");
                                 return;
                         }
 
@@ -981,6 +1206,7 @@ namespace Sharpie
                             }
                         }
 
+                        // TODO: write full name (including containers/namespaces)
                         WriteToken(nt.Name);
                         break;
 
@@ -1010,22 +1236,6 @@ namespace Sharpie
                     }
                 }
                 */
-
-            }
-
-            public void VisitType(ExpressionSyntax type)
-            {
-                var symbol = GetSymbol(type);
-                if (symbol is ITypeSymbol ts && IsSpecialType(ts))
-                {
-                    WriteTrivia(type.GetLeadingTrivia());
-                    WriteType(ts);
-                    WriteTrivia(type.GetTrailingTrivia());
-                }
-                else
-                {
-                    Visit(type);
-                }
             }
 
             private void VisitTypeList(SeparatedSyntaxList<TypeSyntax> list)
@@ -1034,7 +1244,7 @@ namespace Sharpie
                 {
                     if (nodeOrToken.IsNode)
                     {
-                        VisitType((TypeSyntax)nodeOrToken.AsNode());
+                        Visit((TypeSyntax)nodeOrToken.AsNode());
                     }
                     else
                     {
@@ -1092,7 +1302,7 @@ namespace Sharpie
                         break;
 
                     case SyntaxKind.CharacterLiteralExpression:
-                        WriteToken(GetStringLiteral(node.Token.ValueText));
+                        WriteToken(((ushort)((char)node.Token.Value)).ToString());
                         break;
 
                     default:
@@ -1155,22 +1365,51 @@ namespace Sharpie
                 // no nothing
             }
 
+            private bool TryVisitType(ExpressionSyntax node)
+            {
+                if (GetSymbol(node) is ITypeSymbol ts)
+                {
+                    if (IsSpecialType(ts))
+                    {
+                        WriteTrivia(node.GetLeadingTrivia());
+                        WriteType(ts);
+                        WriteTrivia(node.GetTrailingTrivia());
+                        return true;
+                    }
+                    else if (ts.Locations.Length > 0 && !ts.Locations[0].IsInSource)
+                    {
+                        _diagnostics.Add(GetTypeNotSupported(node.GetLocation(), ts.MetadataName));
+                    }
+                }
+
+                return false;
+            }
+
             public override void VisitIdentifierName(IdentifierNameSyntax node)
             {
-                WriteToken(node.Identifier);
+                if (!TryVisitType(node))
+                {
+                    WriteToken(node.Identifier);
+                }
             }
 
             public override void VisitQualifiedName(QualifiedNameSyntax node)
             {
-                Visit(node.Left);
-                WriteToken(node.DotToken);
-                Visit(node.Right);
+                if (!TryVisitType(node))
+                {
+                    Visit(node.Left);
+                    WriteToken(node.DotToken);
+                    Visit(node.Right);
+                }
             }
 
             public override void VisitGenericName(GenericNameSyntax node)
             {
-                WriteToken(node.Identifier);
-                Visit(node.TypeArgumentList);
+                if (!TryVisitType(node))
+                {
+                    WriteToken(node.Identifier);
+                    Visit(node.TypeArgumentList);
+                }
             }
 
             public override void VisitTypeArgumentList(TypeArgumentListSyntax node)
@@ -1229,8 +1468,26 @@ namespace Sharpie
 
             public override void VisitInvocationExpression(InvocationExpressionSyntax node)
             {
-                Visit(node.Expression);
-                Visit(node.ArgumentList);
+                if (!TryVisitSpecialMethodInvocation(node))
+                {
+                    Visit(node.Expression);
+                    Visit(node.ArgumentList);
+                }
+            }
+
+            private bool TryVisitSpecialMethodInvocation(InvocationExpressionSyntax node)
+            {
+                // TODO: handle extension method invocation?
+
+                if (GetSymbol(node) is IMethodSymbol ms)
+                {
+                    if (ms.Locations.Length > 0 && !ms.Locations[0].IsInSource)
+                    {
+                        _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.Name));
+                    }
+                }
+
+                return false;
             }
 
             public override void VisitArgumentList(ArgumentListSyntax node)

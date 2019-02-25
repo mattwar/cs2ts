@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Sharpie;
+using static Sharpie.TypeScriptTranslator;
 
 namespace SharpieTests
 {
@@ -101,12 +102,17 @@ namespace SharpieTests
         [TestMethod]
         public void TestCharLiterals()
         {
-            TestExpression("'a'", "\"a\"");
-            TestExpression("'\\r'", "\"\\r\"");
-            TestExpression("'\\n'", "\"\\n\"");
-            TestExpression("'\\t'", "\"\\t\"");
-            TestExpression("'\\\\'", "\"\\\\\"");
-            TestExpression("'\\\"'", "\"\\\"\"");
+            TestCharLiteral ("'a'", 'a');
+            TestCharLiteral("'\\r'", '\r');
+            TestCharLiteral("'\\n'", '\n');
+            TestCharLiteral("'\\t'", '\t');
+            TestCharLiteral("'\\\\'", '\\');
+            TestCharLiteral("'\\\"'", '"');
+        }
+
+        private void TestCharLiteral(string csharpLiteral, char c)
+        {
+            TestExpression(csharpLiteral, ((ushort)c).ToString());
         }
 
         [TestMethod]
@@ -153,6 +159,12 @@ namespace SharpieTests
             TestExpression("m(a1, a2)", "m(a1, a2)");
             TestExpression("m<T>()", "m<T>()");
             TestExpression("m<int>()", "m<number>()");
+        }
+
+        [TestMethod]
+        public void TestMethodNotSupported()
+        {
+            TestExpressionFails("System.Environment.Exit(0)", MethodNotSupported);
         }
 
         [TestMethod]

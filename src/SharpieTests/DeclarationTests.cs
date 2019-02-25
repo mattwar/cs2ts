@@ -10,32 +10,20 @@ namespace SharpieTests
     public class DeclarationTests : TestBase
     {
         [TestMethod]
-        public void TestClassAccessModifiers()
+        public void TestTypeAccessModifiers()
         {
             TestCompilationUnit(@"public class C { }", "class C { }");
             TestCompilationUnit(@"class C { }", "class C { }");
             TestCompilationUnit(@"internal class C { }", "public class C { }");
-        }
 
-        [TestMethod]
-        public void TestStructAccessModifiers()
-        {
             TestCompilationUnit(@"public struct S { }", "class S { }");
             TestCompilationUnit(@"struct S { }", "class S { }");
             TestCompilationUnit(@"internal struct S { }", "public class S { }");
-        }
 
-        [TestMethod]
-        public void TestInterfaceAccessModifiers()
-        {
             TestCompilationUnit(@"public interface I { }", "interface I { }");
             TestCompilationUnit(@"interface I { }", "interface I { }");
             TestCompilationUnit(@"internal interface I { }", "public interface I { }");
-        }
 
-        [TestMethod]
-        public void TestNestedAccessModifiers()
-        {
             TestCompilationUnit("class C { class N { } }", "class C { private class N { } }");
             TestCompilationUnit("class C { struct N { } }", "class C { private class N { } }");
             TestCompilationUnit("class C { interface N { } }", "class C { private interface N { } }");
@@ -107,7 +95,9 @@ namespace SharpieTests
             TestCompilationUnit(@"class C { public int M(int p1, string p2) { return 1; } }", "class C { M(p1: number, p2: string): number { return 1; } }");
 
             TestCompilationUnit(@"class C { public void M() => E; }", "class C { M() { E; } }");
-            TestCompilationUnit(@"class C { public int M() => E; }", "class C { M(): number { E; } }");
+            TestCompilationUnit(@"class C { public int M() => E; }", "class C { M(): number { return E; } }");
+
+            TestCompilationUnit(@"abstract class C { public abstract int M(); }", "abstract class C { abstract M(): number; }");
         }
 
         [TestMethod]
@@ -115,6 +105,107 @@ namespace SharpieTests
         {
             TestCompilationUnit(@"class C { public int X; }", "class C { X: number; }");
             TestCompilationUnit(@"class C { public int X = 1; }", "class C { X: number = 1; }");
+        }
+
+        [TestMethod]
+        public void TestProperties()
+        {
+            // get only property
+            TestCompilationUnit(@"class C { public int P { get { return x; } } }", "class C { get P(): number { return x; } }");
+
+            // get-set property
+            TestCompilationUnit(@"class C { public int P { get { return x; } set { x = value; } } }", "class C { get P(): number { return x; } set P(value: number) { x = value; } }");
+
+            // set-get property
+            TestCompilationUnit(@"class C { public int P { set { x = value; } get { return x; } } }", "class C { set P(value: number) { x = value; } get P(): number { return x; } }");
+
+            // set-only property
+            TestCompilationUnit(@"class C { public int P { set { x = value; } } }", "class C { set P(value: number) { x = value; } }");
+
+
+            // virtual get only property
+            TestCompilationUnit(@"class C { public virtual int P { get { return x; } } }", "class C { get P(): number { return x; } }");
+
+            // virtual get-set property
+            TestCompilationUnit(@"class C { public virtual int P { get { return x; } set { x = value; } } }", "class C { get P(): number { return x; } set P(value: number) { x = value; } }");
+
+            // virtual set-get property
+            TestCompilationUnit(@"class C { public virtual int P { set { x = value; } get { return x; } } }", "class C { set P(value: number) { x = value; } get P(): number { return x; } }");
+
+            // virtual set-only property
+            TestCompilationUnit(@"class C { public virtual int P { set { x = value; } } }", "class C { set P(value: number) { x = value; } }");
+
+
+            // override get only property
+            TestCompilationUnit(@"class C { public override int P { get { return x; } } }", "class C { get P(): number { return x; } }");
+
+            // override get-set property
+            TestCompilationUnit(@"class C { public override int P { get { return x; } set { x = value; } } }", "class C { get P(): number { return x; } set P(value: number) { x = value; } }");
+
+            // override set-get property
+            TestCompilationUnit(@"class C { public override int P { set { x = value; } get { return x; } } }", "class C { set P(value: number) { x = value; } get P(): number { return x; } }");
+
+            // override set-only property
+            TestCompilationUnit(@"class C { public override int P { set { x = value; } } }", "class C { set P(value: number) { x = value; } }");
+
+
+            // abstract get-only property
+            TestCompilationUnit(@"abstract class C { public abstract int P { get; } }", "abstract class C { abstract get P(): number; }");
+
+            // abstract get-set property
+            TestCompilationUnit(@"abstract class C { public abstract int P { get; set; } }", "abstract class C { abstract get P(): number; abstract set P(value: number); }");
+
+            // abstract set-get property
+            TestCompilationUnit(@"abstract class C { public abstract int P { set; get; } }", "abstract class C { abstract set P(value: number); abstract get P(): number; }");
+
+            // abstract set-only property
+            TestCompilationUnit(@"abstract class C { public abstract int P { set; } }", "abstract class C { abstract set P(value: number); }");
+        }
+
+        [TestMethod]
+        public void TestAutoProperties()
+        {
+            // auto property
+            TestCompilationUnit(@"class C { public int P { get; set; } }", @"class C { P: number; }");
+
+            // readonly auto property
+            TestCompilationUnit(@"class C { public int P { get; } }", @"class C { private _p: number; get P(): number { return _p; } }");
+
+            // initialized auto property
+            TestCompilationUnit(@"class C { public int P { get; set; } = 0; }", @"class C { P: number = 0; }");
+
+            // initialized readonly auto property
+            TestCompilationUnit(@"class C { public int P { get; } = 0; }", @"class C { readonly P: number = 0; }");
+
+
+            // virtual auto property
+            TestCompilationUnit(@"class C { public virtual int P { get; set; } }", @"class C { private _p: number; get P(): number { return _p; } set P(value: number) { _p = value; } }");
+
+            // virtual readonly auto property
+            TestCompilationUnit(@"class C { public virtual int P { get; } }", @"class C { private _p: number; get P(): number { return _p; } }");
+
+            // virtual writeonly auto property
+            TestCompilationUnit(@"class C { public virtual int P { set; } }", @"class C { private _p: number; set P(value: number) { _p = value; } }");
+
+        }
+
+        [TestMethod]
+        public void TestExpressionBodiedProperties()
+        {
+            // expression bodied property
+            TestCompilationUnit(@"class C { public int P => 3; }", "class C { get P(): number { return 3; } }");
+
+            // expression bodied getter property
+            TestCompilationUnit(@"class C { public int P { get => 3; } }", "class C { get P(): number { return 3; } }");
+
+            // expression bodied setter property
+            TestCompilationUnit(@"class C { public int P { set => F(value); } }", "class C { set P(value: number) { F(value); } }");
+
+            // virtual expression bodied property
+            TestCompilationUnit(@"class C { public virtual int P => 3; }", "class C { get P(): number { return 3; } }");
+
+            // override expression bodied property
+            TestCompilationUnit(@"class C { public override int P => 3; }", "class C { get P(): number { return 3; } }");
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -60,6 +61,7 @@ namespace Sharpie
             switch (prev)
             {
                 case ":":
+                case ";":
                 case ",":
                 case "=":
                 case "==":
@@ -136,12 +138,44 @@ namespace Sharpie
             return text.Length > 0 && char.IsWhiteSpace(text[text.Length - 1]);
         }
 
+        private string newLine;
+
         public void WriteTrivia(string trivia)
         {
             if (trivia.Length > 0)
             {
                 _writer.Write(trivia);
                 _last = trivia;
+
+
+                if (newLine == null)
+                {
+                    // discover new line based on first written line break
+                    var i = trivia.IndexOf('\n');
+                    if (i >= 0)
+                    {
+                        if (i > 0 && trivia[i - 1] == '\r')
+                        {
+                            newLine = "\r\n";
+                        }
+                        else
+                        {
+                            newLine = "\n";
+                        }
+                    }
+                }
+            }
+        }
+
+        public void WriteLine()
+        {
+            if (newLine == null)
+            {
+                _writer.WriteLine();
+            }
+            else
+            {
+                _writer.Write(newLine);
             }
         }
     }

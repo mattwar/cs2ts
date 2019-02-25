@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Sharpie;
+using static Sharpie.TypeScriptTranslator;
 
 namespace SharpieTests
 {
@@ -26,7 +27,7 @@ namespace SharpieTests
             TestType("bool", "boolean");
             TestType("object", "object");
             TestType("string", "string");
-            TestType("char", "string");
+            TestType("char", "number");
         }
 
         [TestMethod]
@@ -46,7 +47,8 @@ namespace SharpieTests
             TestType("System.Boolean", "boolean");
             TestType("System.Object", "object");
             TestType("System.String", "string");
-            TestType("System.Char", "string");
+            TestType("System.Char", "number");
+            TestType("System.DateTime", "Date");
         }
 
         [TestMethod]
@@ -67,6 +69,12 @@ namespace SharpieTests
             TestType("Func<int>", "() => number");
             TestType("Func<A0, R>", "(arg0: A0) => R");
             TestType("Func<A0, A1, R>", "(arg0: A0, arg1: A1) => R");
+        }
+
+        [TestMethod]
+        public void TestTypeNotSupported()
+        {
+            TestTypeFails("System.Buffer", TypeNotSupported);
         }
     }
 }

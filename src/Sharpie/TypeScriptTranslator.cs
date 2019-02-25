@@ -311,7 +311,7 @@ namespace Sharpie
 
             public override void VisitClassDeclaration(ClassDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                 WriteToken(node.Keyword);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -324,7 +324,7 @@ namespace Sharpie
 
             public override void VisitStructDeclaration(StructDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                 WriteToken(node.Keyword.LeadingTrivia, "class", node.Keyword.TrailingTrivia);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -337,7 +337,7 @@ namespace Sharpie
 
             public override void VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                 WriteToken(node.Keyword);
                 WriteToken(node.Identifier);
                 Visit(node.TypeParameterList);
@@ -399,12 +399,15 @@ namespace Sharpie
                 }
             }
 
-            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, bool isTypeMember)
+            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, SyntaxNode container)
             {
                 var hasAccessModifiers = modifiers.Any(m => IsAccessModifier(m));
                 var hasModifiers = modifiers.Count > 0;
 
-                if (!hasAccessModifiers && isTypeMember)
+                bool isTypeMember = container is MemberDeclarationSyntax;
+                bool isInterfaceMember = container is InterfaceDeclarationSyntax;
+
+                if (!hasAccessModifiers && isTypeMember && !isInterfaceMember)
                 {
                     WriteToken("private");
                 }
@@ -418,12 +421,21 @@ namespace Sharpie
                             break;
 
                         case SyntaxKind.InternalKeyword:
-                            // these is no internal access, use public instead
-                            WriteToken(mod.LeadingTrivia, "public", mod.TrailingTrivia);
+                            if (!isInterfaceMember)
+                            {
+                                // these is no internal access, use public instead
+                                WriteToken(mod.LeadingTrivia, "public", mod.TrailingTrivia);
+                            }
                             break;
 
                         case SyntaxKind.PrivateKeyword:
                         case SyntaxKind.ProtectedKeyword:
+                            if (!isInterfaceMember)
+                            {
+                                WriteToken(mod);
+                            }
+                            break;
+
                         case SyntaxKind.ReadOnlyKeyword:
                         case SyntaxKind.StaticKeyword:
                         case SyntaxKind.AbstractKeyword:
@@ -455,7 +467,7 @@ namespace Sharpie
 
             public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
             {
-                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
                 WriteToken(node.Identifier.LeadingTrivia, "constructor", node.Identifier.TrailingTrivia);
 
@@ -490,7 +502,7 @@ namespace Sharpie
             {
                 WriteTrivia(First(node.Modifiers.GetLeadingTrivia(), node.ReturnType.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
 
-                WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                 WriteTrivia(node.ReturnType.GetLeadingTrivia());
                 WriteToken(node.Identifier);
 
@@ -573,7 +585,7 @@ namespace Sharpie
                 if (node.Declaration.Variables.Count > 0)
                 {
                     var declarator = node.Declaration.Variables[0];
-                    WriteDeclarationModifiers(node.Modifiers, isTypeMember: node.Parent is TypeDeclarationSyntax);
+                    WriteDeclarationModifiers(node.Modifiers, node.Parent);
                     WriteToken(declarator.Identifier.Text);
                     WriteToken(":");
                     Visit(node.Declaration.Type);
@@ -586,11 +598,12 @@ namespace Sharpie
             public override void VisitPropertyDeclaration(PropertyDeclarationSyntax node)
             {
                 var lt = First(node.Modifiers.GetLeadingTrivia(), node.Type.GetLeadingTrivia());
+                var isInterfaceProperty = node.Parent.IsKind(SyntaxKind.InterfaceDeclaration);
 
                 if (node.ExpressionBody != null)
                 {
                     WriteTrivia(lt, squelch: true);
-                    WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                    WriteDeclarationModifiers(node.Modifiers, node.Parent);
                     WriteToken("get");
                     WriteToken(node.Identifier.Text);
                     WriteToken("(");
@@ -600,7 +613,7 @@ namespace Sharpie
                     Visit(node.Type);
                     VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
                 }
-                else if (IsAutoProperty(node) && !IsAbstract(node.Modifiers))
+                else if (IsAutoProperty(node) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
                 {
                     bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
 
@@ -625,7 +638,7 @@ namespace Sharpie
                             {
                                 Unsquelch(lt);
                                 WriteTrivia(lt, squelch: true);
-                                WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                                 WriteToken("get");
                                 WriteToken(node.Identifier.Text);
                                 WriteToken("(");
@@ -643,7 +656,7 @@ namespace Sharpie
                             {
                                 Unsquelch(lt);
                                 WriteTrivia(lt, squelch: true);
-                                WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                                WriteDeclarationModifiers(node.Modifiers, node.Parent);
                                 WriteToken("set");
                                 WriteToken(node.Identifier.Text);
                                 WriteToken("(");
@@ -664,7 +677,7 @@ namespace Sharpie
                     {
                         // use fields for simple auto props
                         WriteTrivia(lt, squelch: true);
-                        WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                        WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
                         if (isReadOnly)
                         {
@@ -688,7 +701,7 @@ namespace Sharpie
 
                         Unsquelch(lt);
                         WriteTrivia(lt, squelch: true, lastLineOnly: i > 0);
-                        WriteDeclarationModifiers(node.Modifiers, isTypeMember: true);
+                        WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
                         bool isGetter = accessor.IsKind(SyntaxKind.GetAccessorDeclaration);
                         if (isGetter)
@@ -724,6 +737,11 @@ namespace Sharpie
                         }
                     }
                 }
+            }
+
+            public override void VisitIndexerDeclaration(IndexerDeclarationSyntax node)
+            {
+                base.VisitIndexerDeclaration(node);
             }
 
             private static string CamelCase(string text)
@@ -851,6 +869,7 @@ namespace Sharpie
                         case SpecialType.System_UInt64:
                         case SpecialType.System_Byte:
                         case SpecialType.System_SByte:
+                        case SpecialType.System_Char:
                             return "0";
                     }
                 }

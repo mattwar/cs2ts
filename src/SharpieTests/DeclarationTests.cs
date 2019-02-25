@@ -207,5 +207,22 @@ namespace SharpieTests
             // override expression bodied property
             TestCompilationUnit(@"class C { public override int P => 3; }", "class C { get P(): number { return 3; } }");
         }
+
+
+        [TestMethod]
+        public void TestInterfaceMethod()
+        {
+            // has no body... until C# 8?
+            TestCompilationUnit(@"interface I { void M(); }", "interface I { M(); }");
+        }
+
+        [TestMethod]
+        public void TestInterfaceProperties()
+        {
+            // looks like auto-property
+            TestCompilationUnit("interface I { int P { get; set; } }", "interface I { get P(): number; set P(value: number); }");
+            TestCompilationUnit("interface I { int P { get; } }", "interface I { get P(): number; }");
+            TestCompilationUnit("interface I { int P { set; } }", "interface I { set P(value: number); }");
+        }
     }
 }

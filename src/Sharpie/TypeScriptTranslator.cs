@@ -8,6 +8,7 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using E = System.Linq.Expressions;
 
 namespace Sharpie
 {
@@ -300,7 +301,6 @@ namespace Sharpie
                     }
                 }
             }
-
 
             #region Declarations
 
@@ -1498,12 +1498,17 @@ namespace Sharpie
             {
                 // TODO: handle extension method invocation?
 
-                if (GetSymbol(node) is IMethodSymbol ms)
+                if (GetSymbol(node) is IMethodSymbol ms
+                    && ms.Locations.Length > 0 && !ms.Locations[0].IsInSource)
                 {
-                    if (ms.Locations.Length > 0 && !ms.Locations[0].IsInSource)
+                    var translator = GetInvocationTranslator(ms);
+                    if (translator != null)
                     {
-                        _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.Name));
+                        translator(node);
+                        return true;
                     }
+
+                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.Name));
                 }
 
                 return false;
@@ -1535,6 +1540,84 @@ namespace Sharpie
                 WriteToken(node.ArrowToken);
                 Visit(node.Body);
             }
+            #endregion
+
+
+            #region API Translations
+
+            private Action<InvocationExpressionSyntax> GetInvocationTranslator(IMethodSymbol method)
+            {
+                InitTranslations();
+                return _invocationTranslations[method.Name].FirstOrDefault(m => m.Symbol == method)?.Translator;
+            }
+
+            private InvocationTranslation TranslateInvocation(E.Expression<Func<object>> lambda, Action<InvocationExpressionSyntax> translator)
+            {
+                var method = GetMethod(_compilation, lambda);
+                return new InvocationTranslation(method, translator);
+            }
+
+            private static IMethodSymbol GetMethod(Compilation compilation, E.Expression<Func<object>> expr)
+            {
+                var body = expr.Body;
+
+                if (body is E.UnaryExpression ue && ue.NodeType == E.ExpressionType.Convert)
+                    body = ue.Operand;
+
+                if (body is E.MethodCallExpression mc)
+                {
+                    return SymbolMapper.GetMethodSymbol(compilation, mc.Method);
+                }
+
+                return null;
+            }
+
+            private class InvocationTranslation
+            {
+                public IMethodSymbol Symbol { get; }
+
+                public Action<InvocationExpressionSyntax> Translator;
+
+                public InvocationTranslation(IMethodSymbol symbol, Action<InvocationExpressionSyntax> translator)
+                {
+                    this.Symbol = symbol;
+                    this.Translator = translator;
+                }
+            }
+
+            private void RenameInvocation(string name, InvocationExpressionSyntax invocation)
+            {
+                Visit(invocation.Expression);
+                WriteToken(".");
+                WriteToken(name);
+                Visit(invocation.ArgumentList);
+            }
+
+            private void RenameStaticInvocation(string name, InvocationExpressionSyntax invocation)
+            {
+                WriteToken(name);
+                Visit(invocation.ArgumentList);
+            }
+
+            private ILookup<string, InvocationTranslation> _invocationTranslations;
+
+            private void InitTranslations()
+            {
+                if (_invocationTranslations != null)
+                    return;
+
+                var invocationTranslations = new InvocationTranslation[]
+                {
+                    TranslateInvocation(() => string.Concat((string)null), inv => RenameStaticInvocation("String.concat", inv)),
+                    TranslateInvocation(() => string.Concat((string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
+                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
+                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
+                    TranslateInvocation(() => string.Concat((string[])null), inv => RenameStaticInvocation("String.concat", inv))
+                };
+
+                _invocationTranslations = invocationTranslations.ToLookup(m => m.Symbol.Name);
+            }
+
             #endregion
         }
     }

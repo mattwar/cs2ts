@@ -14,13 +14,10 @@ namespace SharpieTests
         [TestMethod]
         public void TestStringConcat()
         {
-            TestExpression("string.Concat(\"a\")", "String.concat(\"a\")");
-            TestExpression("string.Concat(\"a\", \"b\")", "String.concat(\"a\", \"b\")");
-            TestExpression("string.Concat(\"a\", \"b\", \"c\")", "String.concat(\"a\", \"b\", \"c\")");
-
-            TestExpression("System.String.Concat(\"a\")", "String.concat(\"a\")");
-            TestExpression("System.String.Concat(\"a\", \"b\")", "String.concat(\"a\", \"b\")");
-            TestExpression("System.String.Concat(\"a\", \"b\", \"c\")", "String.concat(\"a\", \"b\", \"c\")");
+            TestExpression("string.Concat(\"a\", \"b\")", "\"a\".concat(\"b\")");
+            TestExpression("string.Concat(\"a\", \"b\", \"c\")", "\"a\".concat(\"b\", \"c\")");
+            TestExpression("string.Concat(\"a\", \"b\", \"c\", \"d\")", "\"a\".concat(\"b\", \"c\", \"d\")");
+            TestExpression("string.Concat(\"a\", \"b\", \"c\", \"d\", \"e\")", "\"\".concat(\"a\", \"b\", \"c\", \"d\", \"e\")");
         }
     }
 }

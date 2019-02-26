@@ -1548,7 +1548,9 @@ namespace Sharpie
             private Action<InvocationExpressionSyntax> GetInvocationTranslator(IMethodSymbol method)
             {
                 InitTranslations();
-                return _invocationTranslations[method.Name].FirstOrDefault(m => m.Symbol == method)?.Translator;
+                var its = _invocationTranslations[method.Name];
+                var it = its.FirstOrDefault(m => m.Symbol.Equals(method));
+                return it?.Translator;
             }
 
             private InvocationTranslation TranslateInvocation(E.Expression<Func<object>> lambda, Action<InvocationExpressionSyntax> translator)
@@ -1599,6 +1601,24 @@ namespace Sharpie
                 Visit(invocation.ArgumentList);
             }
 
+            private void WriteFirstArgInvocation(string name, InvocationExpressionSyntax invocation)
+            {
+                Visit(invocation.ArgumentList.Arguments[0]);
+                WriteToken(".");
+                WriteToken(name);
+
+                WriteToken(invocation.ArgumentList.OpenParenToken);
+
+                for (int i = 1; i < invocation.ArgumentList.Arguments.Count; i++)
+                {
+                    if (i > 1)
+                        WriteToken(",");
+                    Visit(invocation.ArgumentList.Arguments[i]);
+                }
+
+                WriteToken(invocation.ArgumentList.CloseParenToken);
+            }
+
             private ILookup<string, InvocationTranslation> _invocationTranslations;
 
             private void InitTranslations()
@@ -1608,11 +1628,20 @@ namespace Sharpie
 
                 var invocationTranslations = new InvocationTranslation[]
                 {
-                    TranslateInvocation(() => string.Concat((string)null), inv => RenameStaticInvocation("String.concat", inv)),
-                    TranslateInvocation(() => string.Concat((string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
-                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
-                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null, (string)null), inv => RenameStaticInvocation("String.concat", inv)),
-                    TranslateInvocation(() => string.Concat((string[])null), inv => RenameStaticInvocation("String.concat", inv))
+                    TranslateInvocation(() => string.Concat((string)null, (string)null), inv => 
+                        WriteFirstArgInvocation("concat", inv)),
+
+                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null), inv => 
+                        WriteFirstArgInvocation("concat", inv)),
+
+                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null, (string)null), inv => 
+                        WriteFirstArgInvocation("concat", inv)),
+
+                    TranslateInvocation(() => string.Concat((string[])null), inv =>
+                    {
+                        WriteToken("\"\".concat");
+                        Visit(inv.ArgumentList);
+                    })
                 };
 
                 _invocationTranslations = invocationTranslations.ToLookup(m => m.Symbol.Name);

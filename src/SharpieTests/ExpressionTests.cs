@@ -190,11 +190,46 @@ namespace SharpieTests
         [TestMethod]
         public void TestLambdaExpression()
         {
-            TestExpression("x => y", "x => y");
-            TestExpression("() => y", "() => y");
-            TestExpression("(x) => y", "(x) => y");
-            TestExpression("(a, b) => y", "(a, b) => y");
-            TestExpression("(int x) => y", "(x: number) => y");
+            TestExpression("x => x", "x => x");
+            TestExpression("() => 0", "() => 0");
+            TestExpression("(x) => x", "(x) => x");
+            TestExpression("(a, b) => a + b", "(a, b) => a + b");
+            TestExpression("(int x) => x", "(x: number) => x");
+
+            // with statement body
+            TestExpression("x => { return x; }", "x => { return x; }");
+            TestExpression("() => { return 0; }", "() => { return 0; }");
+            TestExpression("(x) => { return x; }", "(x) => { return x; }");
+            TestExpression("(a, b) => { return a + b; }", "(a, b) => { return a + b; }");
+            TestExpression("(int x) => { return x; }", "(x: number) => { return x; }");
+        }
+
+        [TestMethod]
+        public void TestAnonymousMethodExpression()
+        {
+            TestExpression("delegate (int x) { return x; }", "(x: number) => { return x; }");
+        }
+
+        [TestMethod]
+        public void TestArrayCreationExpression()
+        {
+            TestExpression("new int[] {1, 2, 3}", "[1, 2, 3]");
+            TestExpression("new string[] {\"one\", \"two\", \"three\"}", "[\"one\", \"two\", \"three\"]");
+            TestExpression("new object[] {1, \"two\", 3.0}", "[1, \"two\", 3.0]");
+
+            // whitespace
+            TestExpression("new int[] { 1, 2, 3 }", "[ 1, 2, 3 ]");
+
+            // implicit typed
+            TestExpression("new [] {1, 2, 3}", "[1, 2, 3]");
+            TestExpression("new [] {\"one\", \"two\", \"three\"}", "[\"one\", \"two\", \"three\"]");
+        }
+
+        [TestMethod]
+        public void TestObjectCreationExpression()
+        {
+            TestExpression("new C()", "new C()");
+            TestExpression("new C(1, 2, 3)", "new C(1, 2, 3)");
         }
     }
 }

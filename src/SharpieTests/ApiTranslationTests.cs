@@ -18,6 +18,7 @@ namespace SharpieTests
             TestExpression("string.Concat(\"a\", \"b\", \"c\")", "\"a\".concat(\"b\", \"c\")");
             TestExpression("string.Concat(\"a\", \"b\", \"c\", \"d\")", "\"a\".concat(\"b\", \"c\", \"d\")");
             TestExpression("string.Concat(\"a\", \"b\", \"c\", \"d\", \"e\")", "\"\".concat(\"a\", \"b\", \"c\", \"d\", \"e\")");
+            TestExpression("string.Concat(new [] {\"a\", \"b\", \"c\", \"d\", \"e\"})", "\"\".concat(...[\"a\", \"b\", \"c\", \"d\", \"e\"])");
         }
     }
 }

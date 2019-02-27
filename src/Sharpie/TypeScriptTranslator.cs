@@ -1540,8 +1540,54 @@ namespace Sharpie
                 WriteToken(node.ArrowToken);
                 Visit(node.Body);
             }
-            #endregion
 
+            public override void VisitAnonymousMethodExpression(AnonymousMethodExpressionSyntax node)
+            {
+                WriteTrivia(First(node.AsyncKeyword.LeadingTrivia, node.DelegateKeyword.LeadingTrivia), squelch: true);
+                Visit(node.ParameterList);
+                WriteToken("=>");
+                Visit(node.Body);
+            }
+
+            public override void VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
+            {
+                WriteToken(node.NewKeyword.LeadingTrivia, "[", node.Initializer.OpenBraceToken.TrailingTrivia);
+                VisitList(node.Initializer.Expressions);
+                WriteToken(node.Initializer.CloseBraceToken.LeadingTrivia, "]", node.Initializer.CloseBraceToken.TrailingTrivia);
+            }
+
+            public override void VisitImplicitArrayCreationExpression(ImplicitArrayCreationExpressionSyntax node)
+            {
+                WriteToken(node.NewKeyword.LeadingTrivia, "[", node.Initializer.OpenBraceToken.TrailingTrivia);
+                VisitList(node.Initializer.Expressions);
+                WriteToken(node.Initializer.CloseBraceToken.LeadingTrivia, "]", node.Initializer.CloseBraceToken.TrailingTrivia);
+            }
+
+            public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+            {
+                // TODO: handle external type constructors
+
+                WriteToken(node.NewKeyword);
+                Visit(node.Type);
+                Visit(node.ArgumentList);
+                Visit(node.Initializer);
+            }
+
+            public override void VisitThisExpression(ThisExpressionSyntax node)
+            {
+                WriteToken(node.Token);
+            }
+
+            public override void VisitBaseExpression(BaseExpressionSyntax node)
+            {
+                base.VisitBaseExpression(node);
+            }
+
+            public override void VisitCastExpression(CastExpressionSyntax node)
+            {
+                base.VisitCastExpression(node);
+            }
+            #endregion
 
             #region API Translations
 
@@ -1640,7 +1686,13 @@ namespace Sharpie
                     TranslateInvocation(() => string.Concat((string[])null), inv =>
                     {
                         WriteToken("\"\".concat");
-                        Visit(inv.ArgumentList);
+                        WriteToken(inv.ArgumentList.OpenParenToken);
+                        if (inv.ArgumentList.Arguments.Count == 1)
+                        {
+                            WriteToken("...");
+                        }
+                        VisitList(inv.ArgumentList.Arguments);
+                        WriteToken(inv.ArgumentList.CloseParenToken);
                     })
                 };
 

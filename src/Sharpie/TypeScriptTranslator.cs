@@ -1317,8 +1317,10 @@ namespace Sharpie
                         }
                         else if (text.EndsWith("l", StringComparison.OrdinalIgnoreCase)
                             || text.EndsWith("m", StringComparison.OrdinalIgnoreCase)
-                            || text.EndsWith("d", StringComparison.OrdinalIgnoreCase)
-                            || text.EndsWith("f", StringComparison.OrdinalIgnoreCase))
+                            // hex literals can end with d or f which shouldn't be removed.
+                            || (!text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) 
+                                && (text.EndsWith("f", StringComparison.OrdinalIgnoreCase)
+                                    || text.EndsWith("d", StringComparison.OrdinalIgnoreCase))))
                         {
                             text = text.Substring(0, text.Length - 1);
                         }

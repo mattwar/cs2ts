@@ -26,6 +26,7 @@ namespace SharpieTests
         [TestMethod]
         public void TestLocalDeclarationStatement()
         {
+            TestStatement("A a = null;", "let a: A = null;");
             TestStatement("int x = 10;", "let x = 10;");
             TestStatement("var x = 10;", "let x = 10;");
             TestStatement("int x;", "let x = 0;");

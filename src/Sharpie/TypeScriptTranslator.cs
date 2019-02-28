@@ -153,6 +153,12 @@ namespace Sharpie
                 return info.Type;
             }
 
+            private ITypeSymbol GetConvertedType(ExpressionSyntax expr)
+            {
+                var model = GetModel(expr.SyntaxTree);
+                var info = model.GetTypeInfo(expr);
+                return info.ConvertedType;
+            }
 
             #region Writing
             private SyntaxTriviaList First(params SyntaxTriviaList?[] candidates)
@@ -825,8 +831,24 @@ namespace Sharpie
             {
                 if (node.Initializer != null)
                 {
-                    WriteToken(node.Identifier);
-                    Visit(node.Initializer);
+                    if (node.Initializer.Value.IsKind(SyntaxKind.NullLiteralExpression))
+                    {
+                        Squelch(node.Identifier.TrailingTrivia);
+                        WriteToken(node.Identifier);
+
+                        if (node.Parent is VariableDeclarationSyntax vd)
+                        {
+                            WriteToken(":");
+                            Visit(vd.Type);
+                        }
+
+                        Visit(node.Initializer);
+                    }
+                    else
+                    {
+                        WriteToken(node.Identifier);
+                        Visit(node.Initializer);
+                    }
                 }
                 else
                 {
@@ -1295,7 +1317,8 @@ namespace Sharpie
                         }
                         else if (text.EndsWith("l", StringComparison.OrdinalIgnoreCase)
                             || text.EndsWith("m", StringComparison.OrdinalIgnoreCase)
-                            || text.EndsWith("d", StringComparison.OrdinalIgnoreCase))
+                            || text.EndsWith("d", StringComparison.OrdinalIgnoreCase)
+                            || text.EndsWith("f", StringComparison.OrdinalIgnoreCase))
                         {
                             text = text.Substring(0, text.Length - 1);
                         }
@@ -1508,7 +1531,7 @@ namespace Sharpie
                         return true;
                     }
 
-                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.Name));
+                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.ToDisplayString()));
                 }
 
                 return false;
@@ -1585,7 +1608,59 @@ namespace Sharpie
 
             public override void VisitCastExpression(CastExpressionSyntax node)
             {
-                base.VisitCastExpression(node);
+                if (GetSymbol(node) is IMethodSymbol ms)
+                {
+                    // TODO: handle user defined conversion...
+                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.ToDisplayString()));
+                }
+
+                var fromType = GetType(node.Expression);
+                var toType = GetType(node);
+                WriteTrivia(First(node.GetLeadingTrivia(), node.GetLeadingTrivia()), squelch: true);
+                WriteConversion(fromType, toType, node.Expression, isExplicit: true);
+            }
+
+            private void WriteConversion(ITypeSymbol fromType, ITypeSymbol toType, SyntaxNode node, bool isExplicit = false)
+            {
+                var conv = _compilation.ClassifyConversion(fromType, toType);
+
+                if (conv.IsNumeric)
+                {
+                    if ((fromType.SpecialType == SpecialType.System_Double || fromType.SpecialType == SpecialType.System_Single)
+                        && (toType.SpecialType != SpecialType.System_Double && toType.SpecialType != SpecialType.System_Single))
+                    {
+                        // going from floating point to integer
+                        WriteToken("Math.floor");
+                        Wrap("(", node, ")");
+                    }
+                    else
+                    {
+                        Visit(node);
+                    }
+                }
+                else if ((conv.IsExplicit || isExplicit) && !(conv.IsIdentity || conv.IsBoxing || conv.IsNullable))
+                {
+                    WriteToken("<");
+                    WriteType(toType);
+                    WriteToken(">");
+                    Visit(node);
+                }
+                else
+                {
+                    Visit(node);
+                }
+            }
+
+            private void Wrap(string before, SyntaxNode node, string after)
+            {
+                WriteToken(before);
+                Squelch(node.GetLeadingTrivia());
+                var tt = node.GetTrailingTrivia();
+                Squelch(tt);
+                Visit(node);
+                WriteToken(after);
+                Unsquelch(tt);
+                WriteTrivia(tt);
             }
             #endregion
 

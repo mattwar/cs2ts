@@ -61,12 +61,15 @@ namespace SharpieTests
             TestExpression("0l", "0");
             TestExpression("0ul", "0");
             TestExpression("0d", "0");
+            TestExpression("0f", "0");
             TestExpression("0m", "0");
             TestExpression("0.0d", "0.0");
+            TestExpression("0.0f", "0.0");
             TestExpression("0.0m", "0.0");
             TestExpression("0L", "0");
             TestExpression("0UL", "0");
             TestExpression("0.0D", "0.0");
+            TestExpression("0.0F", "0.0");
             TestExpression("0.0M", "0.0");
         }
 
@@ -230,6 +233,25 @@ namespace SharpieTests
         {
             TestExpression("new C()", "new C()");
             TestExpression("new C(1, 2, 3)", "new C(1, 2, 3)");
+        }
+
+        [TestMethod]
+        public void TestCastExpression()
+        {
+            // numeric
+            TestExpression("(int)3.5", "Math.floor(3.5)");
+            TestExpression("(int)3.5f", "Math.floor(3.5)");
+            TestExpression("(float)3", "3");
+            TestExpression("(double)3", "3");
+            TestExpression("(int)3", "3");
+            TestExpression("(long)3", "3");
+
+            // non-primitive type conversion: should be okay for upcast/downcast/interface casting
+            TestExpression("(C)b", "<C>b");
+            TestCompilationUnit("class C { public void M() { C a = (C)b; }", "class C { M() { let a = <C>b; }");
+
+            // identity
+            TestCompilationUnit("class C { public void M() { C b = null; C a = (C)b; }", "class C { M() { let b: C = null; let a = b; }");
         }
     }
 }

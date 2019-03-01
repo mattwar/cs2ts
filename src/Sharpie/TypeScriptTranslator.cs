@@ -833,7 +833,58 @@ namespace Sharpie
 
             public override void VisitIndexerDeclaration(IndexerDeclarationSyntax node)
             {
-                base.VisitIndexerDeclaration(node);
+                var lt = node.GetLeadingTrivia();
+                var isInterfaceProperty = node.Parent.IsKind(SyntaxKind.InterfaceDeclaration);
+
+                if (node.ExpressionBody != null)
+                {
+                    Write(lt, squelch: true);
+                    WriteDeclarationModifiers(node.Modifiers, node.Parent);
+                    Write("get", "(");
+                    VisitList(node.ParameterList.Parameters);
+                    Write(")", ":");
+                    Squelch(node.Type.GetTrailingTrivia());
+                    Visit(node.Type);
+                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
+                }
+                else
+                {
+                    // translate accessors
+                    for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
+                    {
+                        var accessor = node.AccessorList.Accessors[i];
+
+                        Unsquelch(lt);
+                        Write(lt, squelch: true, lastLineOnly: i > 0);
+                        WriteDeclarationModifiers(node.Modifiers, node.Parent);
+
+                        bool isGetter = accessor.IsKind(SyntaxKind.GetAccessorDeclaration);
+                        if (isGetter)
+                        {
+                            Squelch(node.Type.GetTrailingTrivia());
+                            Write("get", "(");
+                            VisitList(node.ParameterList.Parameters);
+                            Write(")", ":", node.Type);
+                        }
+                        else
+                        {
+                            Squelch(node.Type.GetTrailingTrivia());
+                            Write("set", "(");
+                            VisitList(node.ParameterList.Parameters);
+                            Write(",", "value", ":", node.Type, ")");
+                        }
+
+                        if (accessor.ExpressionBody != null)
+                        {
+                            VisitExpressionBody(accessor.ExpressionBody, accessor.SemicolonToken, isVoid: !isGetter);
+                        }
+                        else
+                        {
+                            Visit(accessor.Body);
+                            Write(accessor.SemicolonToken);
+                        }
+                    }
+                }
             }
 
             private static string CamelCase(string text)
@@ -1007,9 +1058,92 @@ namespace Sharpie
 
             public override void VisitAssignmentExpression(AssignmentExpressionSyntax node)
             {
-                Visit(node.Left);
-                Write(node.OperatorToken);
-                Visit(node.Right);
+                if (node.Left is ElementAccessExpressionSyntax eax && GetSymbol(eax) is IPropertySymbol ps)
+                {
+                    Write(node.GetLeadingTrivia(), squelch: true);
+
+                    if (node.IsKind(SyntaxKind.SimpleAssignmentExpression))
+                    {
+                        if (eax.Expression != null)
+                        {
+                            Visit(eax.Expression);
+                            Write(".");
+                        }
+
+                        Write("set", "(");
+                        VisitList(eax.ArgumentList.Arguments);
+                        Squelch(node.Right);
+                        Write(",", node.Right, ")");
+                        Unsquelch(node.Right.GetTrailingTrivia());
+                        Write(node.Right.GetTrailingTrivia());
+                    }
+                    else
+                    {
+                        if (eax.Expression != null)
+                        {
+                            Visit(eax.Expression);
+                            Write(".");
+                        }
+
+                        Write("set", "(");
+                        VisitList(eax.ArgumentList.Arguments);
+                        Write(",");
+
+                        if (eax.Expression != null)
+                        {
+                            Visit(eax.Expression);
+                            Write(".");
+                        }
+
+                        Write("get", "(");
+                        VisitList(eax.ArgumentList.Arguments);
+                        Write(")");
+                        Write(eax.ArgumentList.GetTrailingTrivia());
+
+                        Write(node.OperatorToken.LeadingTrivia, GetOperator(node), node.OperatorToken.TrailingTrivia);
+
+                        Squelch(node.Right);
+                        Write(node.Right);
+
+                        Write(")");
+
+                        Unsquelch(node.Right.GetTrailingTrivia());
+                        Write(node.Right.GetTrailingTrivia());
+                    }
+                }
+                else
+                {
+                    Visit(node.Left);
+                    Write(node.OperatorToken);
+                    Visit(node.Right);
+                }
+            }
+
+            private static string GetOperator(AssignmentExpressionSyntax ax)
+            {
+                switch (ax.Kind())
+                {
+                    case SyntaxKind.AddAssignmentExpression:
+                        return "+";
+                    case SyntaxKind.DivideAssignmentExpression:
+                        return "/";
+                    case SyntaxKind.ExclusiveOrAssignmentExpression:
+                        return "^";
+                    case SyntaxKind.LeftShiftAssignmentExpression:
+                        return "<<";
+                    case SyntaxKind.ModuloAssignmentExpression:
+                        return "%";
+                    case SyntaxKind.MultiplyAssignmentExpression:
+                        return "*";
+                    case SyntaxKind.OrAssignmentExpression:
+                        return "|";
+                    case SyntaxKind.RightShiftAssignmentExpression:
+                        return ">>";
+                    case SyntaxKind.SubtractAssignmentExpression:
+                        return "-";
+                    default:
+                        return "";
+                }
             }
 
             public override void VisitIfStatement(IfStatementSyntax node)
@@ -1573,6 +1707,40 @@ namespace Sharpie
                 Visit(node.Expression);
                 Write(node.OperatorToken);
                 Visit(node.Name);
+            }
+
+            public override void VisitElementAccessExpression(ElementAccessExpressionSyntax node)
+            {
+                Visit(node.Expression);
+
+                if (GetSymbol(node) is IPropertySymbol ps)
+                {
+                    // this is an indexer access
+                    if (node.Expression != null)
+                    {
+                        Write(".");
+                    }
+
+                    if (node.Parent is AssignmentExpressionSyntax ax && ax.Left == node)
+                    {
+                        Write("set", "(");
+                        VisitList(node.ArgumentList.Arguments);
+                        Squelch(ax.Right);
+                        Write(",", ax.Right, ")");
+                        Unsquelch(ax.Right.GetTrailingTrivia());
+                        Write(ax.Right.GetTrailingTrivia());
+                    }
+                    else
+                    {
+                        Write("get", "(");
+                        VisitList(node.ArgumentList.Arguments);
+                        Write(")");
+                    }
+                }
+                else
+                {
+                    Visit(node.ArgumentList);
+                }
             }
 
             public override void VisitParenthesizedExpression(ParenthesizedExpressionSyntax node)

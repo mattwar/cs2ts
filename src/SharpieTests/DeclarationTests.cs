@@ -101,6 +101,13 @@ namespace SharpieTests
         }
 
         [TestMethod]
+        public void TestInterfaceMethod()
+        {
+            // has no body... until C# 8?
+            TestCompilationUnit(@"interface I { void M(); }", "interface I { M(); }");
+        }
+
+        [TestMethod]
         public void TestFields()
         {
             TestCompilationUnit(@"class C { public int X; }", "class C { X: number; }");
@@ -208,14 +215,6 @@ namespace SharpieTests
             TestCompilationUnit(@"class C { public override int P => 3; }", "class C { get P(): number { return 3; } }");
         }
 
-
-        [TestMethod]
-        public void TestInterfaceMethod()
-        {
-            // has no body... until C# 8?
-            TestCompilationUnit(@"interface I { void M(); }", "interface I { M(); }");
-        }
-
         [TestMethod]
         public void TestInterfaceProperties()
         {
@@ -223,6 +222,65 @@ namespace SharpieTests
             TestCompilationUnit("interface I { int P { get; set; } }", "interface I { get P(): number; set P(value: number); }");
             TestCompilationUnit("interface I { int P { get; } }", "interface I { get P(): number; }");
             TestCompilationUnit("interface I { int P { set; } }", "interface I { set P(value: number); }");
+        }
+
+        [TestMethod]
+        public void TestIndexers()
+        {
+            // get only indexer
+            TestCompilationUnit(@"class C { public int this[int x] { get { return x; } } }", "class C { get(x: number): number { return x; } }");
+
+            // get set indexer
+            TestCompilationUnit(@"class C { public int this[int x] { get { return x; } set { value; } } }", "class C { get(x: number): number { return x; } set(x: number, value: number) { value; } }");
+
+            // set only indexer
+            TestCompilationUnit(@"class C { public int this[int x] { set { value; } } }", "class C { set(x: number, value: number) { value; } }");
+
+            // abstract get only indexer
+            TestCompilationUnit(@"abstract class C { public abstract int this[int x] { get; } }", "abstract class C { abstract get(x: number): number; }");
+
+            // abstract get set indexer
+            TestCompilationUnit(@"abstract class C { public abstract int this[int x] { get; set; } }", "abstract class C { abstract get(x: number): number; abstract set(x: number, value: number); }");
+
+            // virtual get only indexer
+            TestCompilationUnit(@"class C { public virtual int this[int x] { get { return x; } } }", "class C { get(x: number): number { return x; } }");
+
+            // virtual get set indexer
+            TestCompilationUnit(@"class C { public virtual int this[int x] { get { return x; } set { value; } } }", "class C { get(x: number): number { return x; } set(x: number, value: number) { value; } }");
+
+            // override get only indexer
+            TestCompilationUnit(@"class C { public override int this[int x] { get { return x; } } }", "class C { get(x: number): number { return x; } }");
+
+            // override get set indexer
+            TestCompilationUnit(@"class C { public override int this[int x] { get { return x; } set { value; } } }", "class C { get(x: number): number { return x; } set(x: number, value: number) { value; } }");
+
+            // expression bodied indexer
+            TestCompilationUnit(@"class C { public int this[int x] => x; }", "class C { get(x: number): number { return x; } }");
+        }
+
+        [TestMethod]
+        public void TestInterfaceIndexers()
+        {
+            // get only indexer
+            TestCompilationUnit(@"interface I { int this[int x] { get; } }", "interface I { get(x: number): number; }");
+
+            // get set indexer
+            TestCompilationUnit(@"interface I { int this[int x] { get; set; } }", "interface I { get(x: number): number; set(x: number, value: number); }");
+        }
+
+        [TestMethod]
+        public void TestIndexerAccess()
+        {
+            Test("this[0]", "this.get(0)");
+            Test("this[0] = 5", "this.set(0, 5)");
+            Test("this[0] += 5", "this.set(0, this.get(0) + 5)");
+
+            void Test(string csharp, string typeScript)
+            {
+                TestCompilationUnit(
+                    $"class C {{ public int this[int x] {{ get {{ return x; }} set {{ }} }} public int M() {{ return {csharp}; }} }}",
+                    $"class C {{ get(x: number): number {{ return x; }} set(x: number, value: number) {{ }} M(): number {{ return {typeScript}; }} }}");
+            }
         }
 
         [TestMethod]

@@ -174,23 +174,57 @@ namespace Sharpie
                 return default(SyntaxTriviaList);
             }
 
-            public void WriteToken(SyntaxToken token)
+            public void Write(SyntaxToken token)
             {
-                WriteTrivia(token.LeadingTrivia);
-                WriteToken(token.Text);
-                WriteTrivia(token.TrailingTrivia);
+                Write(token.LeadingTrivia);
+                Write(token.Text);
+                Write(token.TrailingTrivia);
             }
 
-            public void WriteToken(string token)
+            public void Write(string text)
             {
-                _writer.WriteToken(token);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    _writer.WriteTrivia(text);
+                }
+                else
+                {
+                    _writer.WriteToken(text);
+                }
             }
 
             public void WriteToken(SyntaxTriviaList leadingTrivia, string token, SyntaxTriviaList trailingTrivia)
             {
-                WriteTrivia(leadingTrivia);
-                WriteToken(token);
-                WriteTrivia(trailingTrivia);
+                Write(leadingTrivia);
+                Write(token);
+                Write(trailingTrivia);
+            }
+
+            public void Write(params object[] nodesAndTokens)
+            {
+                foreach (var nodeOrToken in nodesAndTokens)
+                {
+                    Write(nodeOrToken);
+                }
+            }
+
+            public void Write(object nodeOrToken)
+            {
+                switch (nodeOrToken)
+                {
+                    case string s:
+                        Write(s);
+                        break;
+                    case SyntaxNode n:
+                        Visit(n);
+                        break;
+                    case SyntaxToken t:
+                        Write(t);
+                        break;
+                    case SyntaxTriviaList tlist:
+                        Write(tlist);
+                        break;
+                }
             }
 
             public void WriteLine()
@@ -198,7 +232,7 @@ namespace Sharpie
                 _writer.WriteLine();
             }
 
-            public void WriteTrivia(SyntaxTriviaList list, bool squelch = false, bool lastLineOnly = false)
+            public void Write(SyntaxTriviaList list, bool squelch = false, bool lastLineOnly = false)
             {
                 if (!IsSquelched(list))
                 {
@@ -248,6 +282,47 @@ namespace Sharpie
             }
 
             /// <summary>
+            /// Wraps the node with before & after tokens.
+            /// The node's leading trivia occurs before the before-text and the trailing trivia after the after-text.
+            /// </summary>
+            private void Wrap(string before, SyntaxNode node, string after)
+            {
+                var lt = node.GetLeadingTrivia();
+                var tt = node.GetTrailingTrivia();
+
+                var ltSquelched = IsSquelched(lt);
+                var ttSquelched = IsSquelched(tt);
+
+                if (!ltSquelched)
+                {
+                    Write(lt);
+                    Squelch(lt);
+                }
+
+                Write(before);
+
+                if (!ttSquelched)
+                {
+                    Squelch(tt);
+                }
+
+                Visit(node);
+
+                Write(after);
+
+                if (!ltSquelched)
+                {
+                    Unsquelch(lt);
+                }
+
+                if (!ttSquelched)
+                {
+                    Unsquelch(tt);
+                    Write(tt);
+                }
+            }
+
+            /// <summary>
             /// The table of trivia lists that are squelched (starting positions)
             /// </summary>
             private readonly HashSet<int> _squelchedTrivia = new HashSet<int>();
@@ -275,6 +350,44 @@ namespace Sharpie
             {
                 return _squelchedTrivia.Contains(list.FullSpan.Start);
             }
+
+            public SyntaxNode SquelchLeading(SyntaxNode node)
+            {
+                Squelch(node.GetLeadingTrivia());
+                return node;
+            }
+
+            public SyntaxToken SquelchLeading(SyntaxToken token)
+            {
+                Squelch(token.LeadingTrivia);
+                return token;
+            }
+
+            public SyntaxNode SquelchTrailing(SyntaxNode node)
+            {
+                Squelch(node.GetTrailingTrivia());
+                return node;
+            }
+
+            public SyntaxToken SquelchTrailing(SyntaxToken token)
+            {
+                Squelch(token.TrailingTrivia);
+                return token;
+            }
+
+            public SyntaxNode Squelch(SyntaxNode node)
+            {
+                Squelch(node.GetLeadingTrivia());
+                Squelch(node.GetTrailingTrivia());
+                return node;
+            }
+
+            public SyntaxToken Squelch(SyntaxToken token)
+            {
+                Squelch(token.LeadingTrivia);
+                Squelch(token.TrailingTrivia);
+                return token;
+            }
             #endregion
 
             public override void DefaultVisit(SyntaxNode node)
@@ -282,6 +395,21 @@ namespace Sharpie
                 if (node != null)
                 {
                     _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.Kind().ToString()));
+
+#if false
+                    // default visit this sucker!
+                    foreach (var nodeOrToken in node.ChildNodesAndTokens())
+                    {
+                        if (nodeOrToken.IsToken)
+                        {
+                            Write(nodeOrToken.AsToken());
+                        }
+                        else
+                        {
+                            Visit(nodeOrToken.AsNode());
+                        }
+                    }
+#endif
                 }
             }
 
@@ -303,13 +431,12 @@ namespace Sharpie
                     }
                     else
                     {
-                        WriteToken(nodeOrToken.AsToken());
+                        Write(nodeOrToken.AsToken());
                     }
                 }
             }
 
-            #region Declarations
-
+#region Declarations
             public override void VisitCompilationUnit(CompilationUnitSyntax node)
             {
                 VisitList(node.Members);
@@ -318,53 +445,53 @@ namespace Sharpie
             public override void VisitClassDeclaration(ClassDeclarationSyntax node)
             {
                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                WriteToken(node.Keyword);
-                WriteToken(node.Identifier);
+                Write(node.Keyword);
+                Write(node.Identifier);
                 Visit(node.TypeParameterList);
                 Visit(node.BaseList);
 
-                WriteToken(node.OpenBraceToken);
+                Write(node.OpenBraceToken);
                 VisitList(node.Members);
-                WriteToken(node.CloseBraceToken);
+                Write(node.CloseBraceToken);
             }
 
             public override void VisitStructDeclaration(StructDeclarationSyntax node)
             {
                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
                 WriteToken(node.Keyword.LeadingTrivia, "class", node.Keyword.TrailingTrivia);
-                WriteToken(node.Identifier);
+                Write(node.Identifier);
                 Visit(node.TypeParameterList);
                 Visit(node.BaseList);
 
-                WriteToken(node.OpenBraceToken);
+                Write(node.OpenBraceToken);
                 VisitList(node.Members);
-                WriteToken(node.CloseBraceToken);
+                Write(node.CloseBraceToken);
             }
 
             public override void VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
             {
                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                WriteToken(node.Keyword);
-                WriteToken(node.Identifier);
+                Write(node.Keyword);
+                Write(node.Identifier);
                 Visit(node.TypeParameterList);
                 Visit(node.BaseList);
 
-                WriteToken(node.OpenBraceToken);
+                Write(node.OpenBraceToken);
                 VisitList(node.Members);
-                WriteToken(node.CloseBraceToken);
+                Write(node.CloseBraceToken);
             }
 
             public override void VisitTypeParameterList(TypeParameterListSyntax node)
             {
-                WriteToken(node.LessThanToken);
+                Write(node.LessThanToken);
                 VisitList(node.Parameters);
-                WriteToken(node.GreaterThanToken);
+                Write(node.GreaterThanToken);
             }
 
             public override void VisitTypeParameter(TypeParameterSyntax node)
             {
                 // TODO: handle variance? attributes?
-                WriteToken(node.Identifier);
+                Write(node.Identifier);
             }
 
             public override void VisitBaseList(BaseListSyntax node)
@@ -376,9 +503,9 @@ namespace Sharpie
                     var baseType = node.Types.FirstOrDefault(t => GetSymbol(t.Type) is INamedTypeSymbol nt && nt.TypeKind != TypeKind.Interface);
                     if (baseType != null)
                     {
-                        WriteTrivia(node.ColonToken.LeadingTrivia, squelch: true);
-                        WriteToken("extends");
-                        WriteTrivia(node.ColonToken.TrailingTrivia, squelch: true);
+                        Write(node.ColonToken.LeadingTrivia, squelch: true);
+                        Write("extends");
+                        Write(node.ColonToken.TrailingTrivia, squelch: true);
 
                         Visit(baseType.Type);
                     }
@@ -391,15 +518,15 @@ namespace Sharpie
                 var interfaces = node.Types.Where(t => GetSymbol(t.Type) is INamedTypeSymbol nt && nt.TypeKind == TypeKind.Interface).ToList();
                 if (interfaces.Count > 0)
                 {
-                    WriteTrivia(node.ColonToken.LeadingTrivia, squelch: true);
-                    WriteToken(interfaceKeyword);
-                    WriteTrivia(node.ColonToken.TrailingTrivia, squelch: true);
+                    Write(node.ColonToken.LeadingTrivia, squelch: true);
+                    Write(interfaceKeyword);
+                    Write(node.ColonToken.TrailingTrivia, squelch: true);
 
                     for (int i = 0; i < interfaces.Count; i++)
                     {
                         var iface = interfaces[i];
                         if (i > 0)
-                            WriteToken(",");
+                            Write(",");
                         Visit(iface.Type);
                     }
                 }
@@ -415,7 +542,7 @@ namespace Sharpie
 
                 if (!hasAccessModifiers && isTypeMember && !isInterfaceMember)
                 {
-                    WriteToken("private");
+                    Write("private");
                 }
 
                 foreach (var mod in modifiers)
@@ -438,14 +565,14 @@ namespace Sharpie
                         case SyntaxKind.ProtectedKeyword:
                             if (!isInterfaceMember)
                             {
-                                WriteToken(mod);
+                                Write(mod);
                             }
                             break;
 
                         case SyntaxKind.ReadOnlyKeyword:
                         case SyntaxKind.StaticKeyword:
                         case SyntaxKind.AbstractKeyword:
-                            WriteToken(mod);
+                            Write(mod);
                             break;
 
                         case SyntaxKind.VirtualKeyword:
@@ -486,31 +613,31 @@ namespace Sharpie
                 else
                 {
                     Visit(node.Body);
-                    WriteToken(node.SemicolonToken);
+                    Write(node.SemicolonToken);
                 }
             }
 
             private void VisitExpressionBody(ArrowExpressionClauseSyntax body, SyntaxToken semicolonToken, bool isVoid)
             {
-                WriteTrivia(body.Expression.GetLeadingTrivia(), squelch: true);
-                WriteToken("{");
+                Write(body.Expression.GetLeadingTrivia(), squelch: true);
+                Write("{");
                 if (!isVoid)
                 {
-                    WriteToken("return");
+                    Write("return");
                 }
                 Visit(body.Expression);
-                WriteToken(semicolonToken.Text);
-                WriteToken("}");
-                WriteTrivia(semicolonToken.TrailingTrivia);
+                Write(semicolonToken.Text);
+                Write("}");
+                Write(semicolonToken.TrailingTrivia);
             }
 
             public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
             {
-                WriteTrivia(First(node.Modifiers.GetLeadingTrivia(), node.ReturnType.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
+                Write(First(node.Modifiers.GetLeadingTrivia(), node.ReturnType.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
 
                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                WriteTrivia(node.ReturnType.GetLeadingTrivia());
-                WriteToken(node.Identifier);
+                Write(node.ReturnType.GetLeadingTrivia());
+                Write(node.Identifier);
 
 
                 if (!IsVoidType(node.ReturnType))
@@ -519,12 +646,12 @@ namespace Sharpie
                     Squelch(tt);
                     Visit(node.ParameterList);
 
-                    WriteToken(":");
+                    Write(":");
                     Squelch(node.ReturnType.GetTrailingTrivia());
                     Visit(node.ReturnType);
 
                     Unsquelch(tt);
-                    WriteTrivia(tt);
+                    Write(tt);
                 }
                 else
                 {
@@ -538,27 +665,27 @@ namespace Sharpie
                 else
                 {
                     Visit(node.Body);
-                    WriteToken(node.SemicolonToken);
+                    Write(node.SemicolonToken);
                 }
             }
 
             public override void VisitParameterList(ParameterListSyntax node)
             {
-                WriteToken(node.OpenParenToken);
+                Write(node.OpenParenToken);
                 VisitList(node.Parameters);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
             }
 
             public override void VisitParameter(ParameterSyntax node)
             {
-                WriteTrivia(First(node.Modifiers.GetLeadingTrivia(), node.Type?.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
+                Write(First(node.Modifiers.GetLeadingTrivia(), node.Type?.GetLeadingTrivia(), node.Identifier.LeadingTrivia), squelch: true);
 
                 WriteParameterModifiers(node.Modifiers);
-                WriteToken(node.Identifier);
+                Write(node.Identifier);
 
                 if (node.Type != null)
                 {
-                    WriteToken(":");
+                    Write(":");
                     Squelch(node.Type.GetTrailingTrivia());
                     Visit(node.Type);
                 }
@@ -571,8 +698,8 @@ namespace Sharpie
                     switch (mod.Kind())
                     {
                         case SyntaxKind.ParamsKeyword:
-                            WriteTrivia(mod.LeadingTrivia);
-                            WriteToken("...");
+                            Write(mod.LeadingTrivia);
+                            Write("...");
                             break;
 
                         default:
@@ -592,34 +719,30 @@ namespace Sharpie
                 {
                     var declarator = node.Declaration.Variables[0];
                     WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                    WriteToken(declarator.Identifier.Text);
-                    WriteToken(":");
+                    Write(declarator.Identifier.Text);
+                    Write(":");
                     Visit(node.Declaration.Type);
                     Visit(declarator.Initializer);
                 }
 
-                WriteToken(node.SemicolonToken);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitPropertyDeclaration(PropertyDeclarationSyntax node)
             {
-                var lt = First(node.Modifiers.GetLeadingTrivia(), node.Type.GetLeadingTrivia());
+                var lt = node.GetLeadingTrivia();
                 var isInterfaceProperty = node.Parent.IsKind(SyntaxKind.InterfaceDeclaration);
 
                 if (node.ExpressionBody != null)
                 {
-                    WriteTrivia(lt, squelch: true);
+                    Write(lt, squelch: true);
                     WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                    WriteToken("get");
-                    WriteToken(node.Identifier.Text);
-                    WriteToken("(");
-                    WriteToken(")");
-                    WriteToken(":");
+                    Write("get", node.Identifier.Text, "(", ")", ":");
                     Squelch(node.Type.GetTrailingTrivia());
                     Visit(node.Type);
                     VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
                 }
-                else if (IsAutoProperty(node) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
+                else if (IsAutoProperty(node.AccessorList) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
                 {
                     bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
 
@@ -628,14 +751,12 @@ namespace Sharpie
                         // need backing field for virtual/override auto-property property
                         var fieldName = "_" + CamelCase(node.Identifier.Text);
 
-                        WriteTrivia(lt, squelch: true);
-                        WriteToken("private");
-                        WriteToken(fieldName);
-                        WriteToken(":");
+                        Write(lt, squelch: true);
+                        Write("private", fieldName, ":");
                         Squelch(node.Type.GetTrailingTrivia());
                         Visit(node.Type);
                         Visit(node.Initializer);
-                        WriteToken(";");
+                        Write(";");
 
                         for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
                         {
@@ -643,59 +764,35 @@ namespace Sharpie
                             if (accessor.IsKind(SyntaxKind.GetAccessorDeclaration))
                             {
                                 Unsquelch(lt);
-                                WriteTrivia(lt, squelch: true);
+                                Write(lt, squelch: true);
                                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                                WriteToken("get");
-                                WriteToken(node.Identifier.Text);
-                                WriteToken("(");
-                                WriteToken(")");
-                                WriteToken(":");
+                                Write("get", node.Identifier.Text, "(", ")", ":");
                                 Squelch(node.Type.GetTrailingTrivia());
                                 Visit(node.Type);
-                                WriteToken("{");
-                                WriteToken("return");
-                                WriteToken(fieldName);
-                                WriteToken(";");
-                                WriteToken("}");
+                                Write("{", "return", fieldName, ";", "}");
                             }
                             else
                             {
                                 Unsquelch(lt);
-                                WriteTrivia(lt, squelch: true);
+                                Write(lt, squelch: true);
                                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
-                                WriteToken("set");
-                                WriteToken(node.Identifier.Text);
-                                WriteToken("(");
-                                WriteToken("value");
-                                WriteToken(":");
-                                Visit(node.Type);
-                                WriteToken(")");
-                                WriteToken("{");
-                                WriteToken(fieldName);
-                                WriteToken("=");
-                                WriteToken("value");
-                                WriteToken(";");
-                                WriteToken("}");
+                                Write("set", node.Identifier.Text, "(", "value", ":", node.Type, ")", "{", fieldName, "=", "value", ";", "}");
                             }
                         }
                     }
                     else 
                     {
                         // use fields for simple auto props
-                        WriteTrivia(lt, squelch: true);
+                        Write(lt, squelch: true);
                         WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
                         if (isReadOnly)
                         {
-                            WriteToken("readonly");
+                            Write("readonly");
                         }
 
-                        WriteToken(node.Identifier.Text);
-                        WriteToken(":");
                         Squelch(node.Type.GetTrailingTrivia());
-                        Visit(node.Type);
-                        Visit(node.Initializer);
-                        WriteToken(";");
+                        Write(node.Identifier.Text, ":", node.Type, node.Initializer, ";");
                     }
                 }
                 else
@@ -706,30 +803,19 @@ namespace Sharpie
                         var accessor = node.AccessorList.Accessors[i];
 
                         Unsquelch(lt);
-                        WriteTrivia(lt, squelch: true, lastLineOnly: i > 0);
+                        Write(lt, squelch: true, lastLineOnly: i > 0);
                         WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
                         bool isGetter = accessor.IsKind(SyntaxKind.GetAccessorDeclaration);
                         if (isGetter)
                         {
-                            WriteToken("get");
-                            WriteToken(node.Identifier.Text);
-                            WriteToken("(");
-                            WriteToken(")");
-                            WriteToken(":");
                             Squelch(node.Type.GetTrailingTrivia());
-                            Visit(node.Type);
+                            Write("get", node.Identifier.Text, "(", ")", ":", node.Type);
                         }
                         else
                         {
-                            WriteToken("set");
-                            WriteToken(node.Identifier.Text);
-                            WriteToken("(");
-                            WriteToken("value");
-                            WriteToken(":");
                             Squelch(node.Type.GetTrailingTrivia());
-                            Visit(node.Type);
-                            WriteToken(")");
+                            Write("set", node.Identifier.Text, "(", "value", ":", node.Type, ")");
                         }
 
                         if (accessor.ExpressionBody != null)
@@ -739,7 +825,7 @@ namespace Sharpie
                         else
                         {
                             Visit(accessor.Body);
-                            WriteToken(accessor.SemicolonToken);
+                            Write(accessor.SemicolonToken);
                         }
                     }
                 }
@@ -777,52 +863,66 @@ namespace Sharpie
                 return modifiers.Any(m => m.IsKind(SyntaxKind.OverrideKeyword));
             }
 
-            private static bool IsAutoProperty(PropertyDeclarationSyntax prop)
+            private static bool IsAutoProperty(AccessorListSyntax accessors)
             {
-                return prop.AccessorList.Accessors.All(a => !HasBody(a));
+                return accessors.Accessors.All(a => !HasBody(a));
             }
 
             private static bool HasBody(AccessorDeclarationSyntax acc)
             {
                 return acc.Body != null || acc.ExpressionBody != null;
             }
-            #endregion
 
-            #region Statements
+            public override void VisitDelegateDeclaration(DelegateDeclarationSyntax node)
+            {
+                Write(node.DelegateKeyword.LeadingTrivia);
+                Write("interface", node.Identifier.Text, node.TypeParameterList, "{", node.ParameterList);
+
+                if (!IsVoidType(node.ReturnType))
+                {
+                    Write(":", Squelch(node.ReturnType));
+                }
+
+                Write(";", "}");
+                Write(node.GetTrailingTrivia());
+            }
+#endregion
+
+#region Statements
             public override void VisitBlock(BlockSyntax node)
             {
-                WriteToken(node.OpenBraceToken);
+                Write(node.OpenBraceToken);
 
                 foreach (var statement in node.Statements)
                 {
                     Visit(statement);
                 }
 
-                WriteToken(node.CloseBraceToken);
+                Write(node.CloseBraceToken);
             }
 
             public override void VisitExpressionStatement(ExpressionStatementSyntax node)
             {
                 Visit(node.Expression);
-                WriteToken(node.SemicolonToken);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node)
             {
                 var leadingTrivia = First(node.Modifiers.GetLeadingTrivia(), node.Declaration.Type.GetLeadingTrivia(), node.Declaration.Variables[0].Identifier.LeadingTrivia);
 
-                WriteTrivia(leadingTrivia, squelch: true);
+                Write(leadingTrivia, squelch: true);
                 Visit(node.Declaration);
 
-                WriteToken(node.SemicolonToken);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitVariableDeclaration(VariableDeclarationSyntax node)
             {
                 var leadingTrivia = First(node.Type.GetLeadingTrivia(), node.Variables[0].Identifier.LeadingTrivia);
 
-                WriteTrivia(leadingTrivia, squelch: true);
-                WriteToken("let");
+                Write(leadingTrivia, squelch: true);
+                Write("let");
 
                 VisitList(node.Variables);
             }
@@ -834,11 +934,11 @@ namespace Sharpie
                     if (node.Initializer.Value.IsKind(SyntaxKind.NullLiteralExpression))
                     {
                         Squelch(node.Identifier.TrailingTrivia);
-                        WriteToken(node.Identifier);
+                        Write(node.Identifier);
 
                         if (node.Parent is VariableDeclarationSyntax vd)
                         {
-                            WriteToken(":");
+                            Write(":");
                             Visit(vd.Type);
                         }
 
@@ -846,14 +946,14 @@ namespace Sharpie
                     }
                     else
                     {
-                        WriteToken(node.Identifier);
+                        Write(node.Identifier);
                         Visit(node.Initializer);
                     }
                 }
                 else
                 {
                     Squelch(node.Identifier.TrailingTrivia);
-                    WriteToken(node.Identifier);
+                    Write(node.Identifier);
 
                     if (node.Parent is VariableDeclarationSyntax vd)
                     {
@@ -861,12 +961,12 @@ namespace Sharpie
 
                         if (defValue == "null")
                         {
-                            WriteToken(":");
+                            Write(":");
                             Visit(vd.Type);
                         }
 
-                        WriteToken("=");
-                        WriteToken(defValue);
+                        Write("=");
+                        Write(defValue);
                     }
                 }
             }
@@ -901,42 +1001,42 @@ namespace Sharpie
 
             public override void VisitEqualsValueClause(EqualsValueClauseSyntax node)
             {
-                WriteToken(node.EqualsToken);
+                Write(node.EqualsToken);
                 Visit(node.Value);
             }
 
             public override void VisitAssignmentExpression(AssignmentExpressionSyntax node)
             {
                 Visit(node.Left);
-                WriteToken(node.OperatorToken);
+                Write(node.OperatorToken);
                 Visit(node.Right);
             }
 
             public override void VisitIfStatement(IfStatementSyntax node)
             {
-                WriteToken(node.IfKeyword);
-                WriteToken(node.OpenParenToken);
+                Write(node.IfKeyword);
+                Write(node.OpenParenToken);
                 Visit(node.Condition);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
                 Visit(node.Statement);
                 Visit(node.Else);
             }
 
             public override void VisitElseClause(ElseClauseSyntax node)
             {
-                WriteToken(node.ElseKeyword);
+                Write(node.ElseKeyword);
                 Visit(node.Statement);
             }
 
             public override void VisitSwitchStatement(SwitchStatementSyntax node)
             {
-                WriteToken(node.SwitchKeyword);
-                WriteToken(node.OpenParenToken);
+                Write(node.SwitchKeyword);
+                Write(node.OpenParenToken);
                 Visit(node.Expression);
-                WriteToken(node.CloseParenToken);
-                WriteToken(node.OpenBraceToken);
+                Write(node.CloseParenToken);
+                Write(node.OpenBraceToken);
                 VisitList(node.Sections);
-                WriteToken(node.CloseBraceToken);
+                Write(node.CloseBraceToken);
             }
 
             public override void VisitSwitchSection(SwitchSectionSyntax node)
@@ -947,70 +1047,70 @@ namespace Sharpie
 
             public override void VisitCaseSwitchLabel(CaseSwitchLabelSyntax node)
             {
-                WriteToken(node.Keyword);
+                Write(node.Keyword);
                 Visit(node.Value);
-                WriteToken(node.ColonToken);
+                Write(node.ColonToken);
             }
 
             public override void VisitDefaultSwitchLabel(DefaultSwitchLabelSyntax node)
             {
-                WriteToken(node.Keyword);
-                WriteToken(node.ColonToken);
+                Write(node.Keyword);
+                Write(node.ColonToken);
             }
 
             public override void VisitBreakStatement(BreakStatementSyntax node)
             {
-                WriteToken(node.BreakKeyword);
-                WriteToken(node.SemicolonToken);
+                Write(node.BreakKeyword);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitContinueStatement(ContinueStatementSyntax node)
             {
-                WriteToken(node.ContinueKeyword);
-                WriteToken(node.SemicolonToken);
+                Write(node.ContinueKeyword);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitReturnStatement(ReturnStatementSyntax node)
             {
-                WriteToken(node.ReturnKeyword);
+                Write(node.ReturnKeyword);
                 Visit(node.Expression);
-                WriteToken(node.SemicolonToken);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitWhileStatement(WhileStatementSyntax node)
             {
-                WriteToken(node.WhileKeyword);
-                WriteToken(node.OpenParenToken);
+                Write(node.WhileKeyword);
+                Write(node.OpenParenToken);
                 Visit(node.Condition);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
                 VisitBlock(node.Statement);
             }
 
             public override void VisitDoStatement(DoStatementSyntax node)
             {
-                WriteToken(node.DoKeyword);
+                Write(node.DoKeyword);
                 VisitBlock(node.Statement);
-                WriteToken(node.WhileKeyword);
-                WriteToken(node.OpenParenToken);
+                Write(node.WhileKeyword);
+                Write(node.OpenParenToken);
                 Visit(node.Condition);
-                WriteToken(node.CloseParenToken);
-                WriteToken(node.SemicolonToken);
+                Write(node.CloseParenToken);
+                Write(node.SemicolonToken);
             }
 
             public override void VisitForStatement(ForStatementSyntax node)
             {
-                WriteToken(node.ForKeyword);
-                WriteToken(node.OpenParenToken);
+                Write(node.ForKeyword);
+                Write(node.OpenParenToken);
 
                 Visit(node.Declaration);  // either, or?
                 VisitList(node.Initializers);
-                WriteToken(node.FirstSemicolonToken);
+                Write(node.FirstSemicolonToken);
 
                 Visit(node.Condition);
-                WriteToken(node.SecondSemicolonToken);
+                Write(node.SecondSemicolonToken);
 
                 VisitList(node.Incrementors);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
 
                 VisitBlock(node.Statement);
             }
@@ -1018,26 +1118,26 @@ namespace Sharpie
             public override void VisitForEachStatement(ForEachStatementSyntax node)
             {
                 WriteToken(node.ForEachKeyword.LeadingTrivia, "for", node.ForEachKeyword.TrailingTrivia);
-                WriteToken(node.OpenParenToken);
+                Write(node.OpenParenToken);
 
-                WriteToken("let");
+                Write("let");
 
                 if (!IsVarType(node.Type))
                 {
                     Squelch(node.Identifier.TrailingTrivia);
-                    WriteToken(node.Identifier);
-                    WriteToken(":");
+                    Write(node.Identifier);
+                    Write(":");
                     Visit(node.Type);
                 }
                 else
                 {
-                    WriteToken(node.Identifier);
+                    Write(node.Identifier);
                 }
 
-                WriteToken("of");
+                Write("of");
                 Visit(node.Expression);
 
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
 
                 VisitBlock(node.Statement);
             }
@@ -1055,14 +1155,14 @@ namespace Sharpie
                 }
                 else
                 {
-                    WriteToken("{");
+                    Write("{");
                     Visit(statement);
-                    WriteToken("}");
+                    Write("}");
                 }
             }
-            #endregion
+#endregion
 
-            #region Types
+#region Types
             private static bool IsVarType(ExpressionSyntax expr)
             {
                 return expr is IdentifierNameSyntax id && id.Identifier.Text == "var";
@@ -1082,8 +1182,8 @@ namespace Sharpie
             public override void VisitNullableType(NullableTypeSyntax node)
             {
                 Visit(node.ElementType);
-                WriteToken("|");
-                WriteToken("null");
+                Write("|");
+                Write("null");
             }
 
             public override void VisitPredefinedType(PredefinedTypeSyntax node)
@@ -1112,12 +1212,12 @@ namespace Sharpie
                     case SyntaxKind.ObjectKeyword:
                     case SyntaxKind.StringKeyword:
                     case SyntaxKind.VoidKeyword:
-                        WriteToken(node.Keyword);
+                        Write(node.Keyword);
                         break;
 
                     default:
                         _diagnostics.Add(GetTypeNotSupported(node.GetLocation(), node.ToString()));
-                        WriteToken(node.ToString());
+                        Write(node.ToString());
                         break;
                 }
             }
@@ -1171,7 +1271,7 @@ namespace Sharpie
                         switch (nt.SpecialType)
                         {
                             case SpecialType.System_Boolean:
-                                WriteToken("boolean");
+                                Write("boolean");
                                 return;
 
                             case SpecialType.System_Decimal:
@@ -1186,19 +1286,19 @@ namespace Sharpie
                             case SpecialType.System_Byte:
                             case SpecialType.System_SByte:
                             case SpecialType.System_Char:
-                                WriteToken("number");
+                                Write("number");
                                 return;
 
                             case SpecialType.System_Object:
-                                WriteToken("object");
+                                Write("object");
                                 return;
 
                             case SpecialType.System_String:
-                                WriteToken("string");
+                                Write("string");
                                 return;
 
                             case SpecialType.System_DateTime:
-                                WriteToken("Date");
+                                Write("Date");
                                 return;
                         }
 
@@ -1209,55 +1309,55 @@ namespace Sharpie
                             {
                                 case "Nullable":
                                     WriteType(nt.TypeArguments[0]);
-                                    WriteToken("|");
-                                    WriteToken("null");
+                                    Write("|");
+                                    Write("null");
                                     return;
 
                                 case "Func":
-                                    WriteToken("(");
+                                    Write("(");
                                     for (int i = 0; i < nt.TypeArguments.Length - 1; i++)
                                     {
                                         var t = nt.TypeArguments[i];
                                         if (i > 0)
-                                            WriteToken(",");
-                                        WriteToken("arg" + i);
-                                        WriteToken(":");
+                                            Write(",");
+                                        Write("arg" + i);
+                                        Write(":");
                                         WriteType(t);
                                     }
-                                    WriteToken(")");
-                                    WriteToken("=>");
+                                    Write(")");
+                                    Write("=>");
                                     WriteType(nt.TypeArguments[nt.TypeArguments.Length - 1]);
                                     return;
 
                                 case "Action":
-                                    WriteToken("(");
+                                    Write("(");
                                     for (int i = 0; i < nt.TypeArguments.Length; i++)
                                     {
                                         var t = nt.TypeArguments[i];
                                         if (i > 0)
-                                            WriteToken(",");
-                                        WriteToken("arg" + i);
-                                        WriteToken(":");
+                                            Write(",");
+                                        Write("arg" + i);
+                                        Write(":");
                                         WriteType(t);
                                     }
-                                    WriteToken(")");
-                                    WriteToken("=>");
-                                    WriteToken("void");
+                                    Write(")");
+                                    Write("=>");
+                                    Write("void");
                                     return;
                             }
                         }
 
                         // TODO: write full name (including containers/namespaces)
-                        WriteToken(nt.Name);
+                        Write(nt.Name);
                         break;
 
                     case IArrayTypeSymbol at:
                         WriteType(at.ElementType);
-                        WriteToken("[]"); // TODO: multi-dimensional arrays?
+                        Write("[]"); // TODO: multi-dimensional arrays?
                         break;
 
                     case ITypeParameterSymbol tp:
-                        WriteToken(tp.Name);
+                        Write(tp.Name);
                         break;
                 }
 
@@ -1289,14 +1389,14 @@ namespace Sharpie
                     }
                     else
                     {
-                        WriteToken(nodeOrToken.AsToken());
+                        Write(nodeOrToken.AsToken());
                     }
                 }
             }
 
-            #endregion
+#endregion
 
-            #region Literals
+#region Literals
             public override void VisitLiteralExpression(LiteralExpressionSyntax node)
             {
                 switch (node.Kind())
@@ -1304,7 +1404,7 @@ namespace Sharpie
                     case SyntaxKind.TrueLiteralExpression:
                     case SyntaxKind.FalseLiteralExpression:
                     case SyntaxKind.NullLiteralExpression:
-                        WriteToken(node.Token);
+                        Write(node.Token);
                         break;
 
                     case SyntaxKind.NumericLiteralExpression:
@@ -1337,21 +1437,21 @@ namespace Sharpie
                     case SyntaxKind.StringLiteralExpression:
                         if (node.Token.Text.StartsWith("@"))
                         {
-                            WriteToken(GetStringLiteral(node.Token.ValueText));
+                            Write(GetStringLiteral(node.Token.ValueText));
                         }
                         else
                         {
-                            WriteToken(node.Token);
+                            Write(node.Token);
                         }
                         break;
 
                     case SyntaxKind.CharacterLiteralExpression:
-                        WriteToken(((ushort)((char)node.Token.Value)).ToString());
+                        Write(((ushort)((char)node.Token.Value)).ToString());
                         break;
 
                     default:
                         _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
-                        WriteToken(node.ToString());
+                        Write(node.ToString());
                         break;
                 }
             }
@@ -1394,14 +1494,14 @@ namespace Sharpie
 
                 return builder.ToString();
             }
-            #endregion
+#endregion
 
-            #region Expressions
+#region Expressions
             public override void VisitArrayRankSpecifier(ArrayRankSpecifierSyntax node)
             {
-                WriteToken(node.OpenBracketToken);
+                Write(node.OpenBracketToken);
                 VisitList(node.Sizes);
-                WriteToken(node.CloseBracketToken);
+                Write(node.CloseBracketToken);
             }
 
             public override void VisitOmittedArraySizeExpression(OmittedArraySizeExpressionSyntax node)
@@ -1415,9 +1515,9 @@ namespace Sharpie
                 {
                     if (IsSpecialType(ts))
                     {
-                        WriteTrivia(node.GetLeadingTrivia());
+                        Write(node.GetLeadingTrivia());
                         WriteType(ts);
-                        WriteTrivia(node.GetTrailingTrivia());
+                        Write(node.GetTrailingTrivia());
                         return true;
                     }
                     else if (ts.Locations.Length > 0 && !ts.Locations[0].IsInSource)
@@ -1433,7 +1533,7 @@ namespace Sharpie
             {
                 if (!TryVisitType(node))
                 {
-                    WriteToken(node.Identifier);
+                    Write(node.Identifier);
                 }
             }
 
@@ -1442,7 +1542,7 @@ namespace Sharpie
                 if (!TryVisitType(node))
                 {
                     Visit(node.Left);
-                    WriteToken(node.DotToken);
+                    Write(node.DotToken);
                     Visit(node.Right);
                 }
             }
@@ -1451,16 +1551,16 @@ namespace Sharpie
             {
                 if (!TryVisitType(node))
                 {
-                    WriteToken(node.Identifier);
+                    Write(node.Identifier);
                     Visit(node.TypeArgumentList);
                 }
             }
 
             public override void VisitTypeArgumentList(TypeArgumentListSyntax node)
             {
-                WriteToken(node.LessThanToken);
+                Write(node.LessThanToken);
                 VisitTypeList(node.Arguments);
-                WriteToken(node.GreaterThanToken);
+                Write(node.GreaterThanToken);
             }
 
             public override void VisitOmittedTypeArgument(OmittedTypeArgumentSyntax node)
@@ -1471,42 +1571,42 @@ namespace Sharpie
             public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
             {
                 Visit(node.Expression);
-                WriteToken(node.OperatorToken);
+                Write(node.OperatorToken);
                 Visit(node.Name);
             }
 
             public override void VisitParenthesizedExpression(ParenthesizedExpressionSyntax node)
             {
-                WriteToken(node.OpenParenToken);
+                Write(node.OpenParenToken);
                 Visit(node.Expression);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
             }
 
             public override void VisitBinaryExpression(BinaryExpressionSyntax node)
             {
                 Visit(node.Left);
-                WriteToken(node.OperatorToken);
+                Write(node.OperatorToken);
                 Visit(node.Right);
             }
 
             public override void VisitPrefixUnaryExpression(PrefixUnaryExpressionSyntax node)
             {
-                WriteToken(node.OperatorToken);
+                Write(node.OperatorToken);
                 Visit(node.Operand);
             }
 
             public override void VisitPostfixUnaryExpression(PostfixUnaryExpressionSyntax node)
             {
                 Visit(node.Operand);
-                WriteToken(node.OperatorToken);
+                Write(node.OperatorToken);
             }
 
             public override void VisitConditionalExpression(ConditionalExpressionSyntax node)
             {
                 Visit(node.Condition);
-                WriteToken(node.QuestionToken);
+                Write(node.QuestionToken);
                 Visit(node.WhenTrue);
-                WriteToken(node.ColonToken);
+                Write(node.ColonToken);
                 Visit(node.WhenFalse);
             }
 
@@ -1541,9 +1641,9 @@ namespace Sharpie
 
             public override void VisitArgumentList(ArgumentListSyntax node)
             {
-                WriteToken(node.OpenParenToken);
+                Write(node.OpenParenToken);
                 VisitList(node.Arguments);
-                WriteToken(node.CloseParenToken);
+                Write(node.CloseParenToken);
             }
 
             public override void VisitArgument(ArgumentSyntax node)
@@ -1555,22 +1655,22 @@ namespace Sharpie
             public override void VisitSimpleLambdaExpression(SimpleLambdaExpressionSyntax node)
             {
                 Visit(node.Parameter);
-                WriteToken(node.ArrowToken);
+                Write(node.ArrowToken);
                 Visit(node.Body);
             }
 
             public override void VisitParenthesizedLambdaExpression(ParenthesizedLambdaExpressionSyntax node)
             {
                 Visit(node.ParameterList);
-                WriteToken(node.ArrowToken);
+                Write(node.ArrowToken);
                 Visit(node.Body);
             }
 
             public override void VisitAnonymousMethodExpression(AnonymousMethodExpressionSyntax node)
             {
-                WriteTrivia(First(node.AsyncKeyword.LeadingTrivia, node.DelegateKeyword.LeadingTrivia), squelch: true);
+                Write(First(node.AsyncKeyword.LeadingTrivia, node.DelegateKeyword.LeadingTrivia), squelch: true);
                 Visit(node.ParameterList);
-                WriteToken("=>");
+                Write("=>");
                 Visit(node.Body);
             }
 
@@ -1592,7 +1692,7 @@ namespace Sharpie
             {
                 // TODO: handle external type constructors
 
-                WriteToken(node.NewKeyword);
+                Write(node.NewKeyword);
                 Visit(node.Type);
                 Visit(node.ArgumentList);
                 Visit(node.Initializer);
@@ -1600,7 +1700,7 @@ namespace Sharpie
 
             public override void VisitThisExpression(ThisExpressionSyntax node)
             {
-                WriteToken(node.Token);
+                Write(node.Token);
             }
 
             public override void VisitBaseExpression(BaseExpressionSyntax node)
@@ -1618,7 +1718,7 @@ namespace Sharpie
 
                 var fromType = GetType(node.Expression);
                 var toType = GetType(node);
-                WriteTrivia(First(node.GetLeadingTrivia(), node.GetLeadingTrivia()), squelch: true);
+                Write(First(node.GetLeadingTrivia(), node.GetLeadingTrivia()), squelch: true);
                 WriteConversion(fromType, toType, node.Expression, isExplicit: true);
             }
 
@@ -1632,7 +1732,7 @@ namespace Sharpie
                         && (toType.SpecialType != SpecialType.System_Double && toType.SpecialType != SpecialType.System_Single))
                     {
                         // going from floating point to integer
-                        WriteToken("Math.floor");
+                        Write("Math.floor");
                         Wrap("(", node, ")");
                     }
                     else
@@ -1642,9 +1742,9 @@ namespace Sharpie
                 }
                 else if ((conv.IsExplicit || isExplicit) && !(conv.IsIdentity || conv.IsBoxing || conv.IsNullable))
                 {
-                    WriteToken("<");
+                    Write("<");
                     WriteType(toType);
-                    WriteToken(">");
+                    Write(">");
                     Visit(node);
                 }
                 else
@@ -1652,21 +1752,9 @@ namespace Sharpie
                     Visit(node);
                 }
             }
+#endregion
 
-            private void Wrap(string before, SyntaxNode node, string after)
-            {
-                WriteToken(before);
-                Squelch(node.GetLeadingTrivia());
-                var tt = node.GetTrailingTrivia();
-                Squelch(tt);
-                Visit(node);
-                WriteToken(after);
-                Unsquelch(tt);
-                WriteTrivia(tt);
-            }
-            #endregion
-
-            #region API Translations
+#region API Translations
 
             private Action<InvocationExpressionSyntax> GetInvocationTranslator(IMethodSymbol method)
             {
@@ -1713,33 +1801,33 @@ namespace Sharpie
             private void RenameInvocation(string name, InvocationExpressionSyntax invocation)
             {
                 Visit(invocation.Expression);
-                WriteToken(".");
-                WriteToken(name);
+                Write(".");
+                Write(name);
                 Visit(invocation.ArgumentList);
             }
 
             private void RenameStaticInvocation(string name, InvocationExpressionSyntax invocation)
             {
-                WriteToken(name);
+                Write(name);
                 Visit(invocation.ArgumentList);
             }
 
             private void WriteFirstArgInvocation(string name, InvocationExpressionSyntax invocation)
             {
                 Visit(invocation.ArgumentList.Arguments[0]);
-                WriteToken(".");
-                WriteToken(name);
+                Write(".");
+                Write(name);
 
-                WriteToken(invocation.ArgumentList.OpenParenToken);
+                Write(invocation.ArgumentList.OpenParenToken);
 
                 for (int i = 1; i < invocation.ArgumentList.Arguments.Count; i++)
                 {
                     if (i > 1)
-                        WriteToken(",");
+                        Write(",");
                     Visit(invocation.ArgumentList.Arguments[i]);
                 }
 
-                WriteToken(invocation.ArgumentList.CloseParenToken);
+                Write(invocation.ArgumentList.CloseParenToken);
             }
 
             private ILookup<string, InvocationTranslation> _invocationTranslations;
@@ -1762,21 +1850,21 @@ namespace Sharpie
 
                     TranslateInvocation(() => string.Concat((string[])null), inv =>
                     {
-                        WriteToken("\"\".concat");
-                        WriteToken(inv.ArgumentList.OpenParenToken);
+                        Write("\"\".concat");
+                        Write(inv.ArgumentList.OpenParenToken);
                         if (inv.ArgumentList.Arguments.Count == 1)
                         {
-                            WriteToken("...");
+                            Write("...");
                         }
                         VisitList(inv.ArgumentList.Arguments);
-                        WriteToken(inv.ArgumentList.CloseParenToken);
+                        Write(inv.ArgumentList.CloseParenToken);
                     })
                 };
 
                 _invocationTranslations = invocationTranslations.ToLookup(m => m.Symbol.Name);
             }
 
-            #endregion
+#endregion
         }
     }
 }

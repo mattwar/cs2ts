@@ -224,5 +224,21 @@ namespace SharpieTests
             TestCompilationUnit("interface I { int P { get; } }", "interface I { get P(): number; }");
             TestCompilationUnit("interface I { int P { set; } }", "interface I { set P(value: number); }");
         }
+
+        [TestMethod]
+        public void TestDelegates()
+        {
+            TestCompilationUnit("delegate void D();", "interface D { (); }");
+            TestCompilationUnit("delegate void D(int p);", "interface D { (p: number); }");
+            TestCompilationUnit("delegate void D(int p1, string p2);", "interface D { (p1: number, p2: string); }");
+
+            TestCompilationUnit("delegate int D();", "interface D { (): number; }");
+            TestCompilationUnit("delegate int D(int p);", "interface D { (p: number): number; }");
+            TestCompilationUnit("delegate int D(int p1, string p2);", "interface D { (p1: number, p2: string): number; }");
+
+            TestCompilationUnit("delegate void D<T>();", "interface D<T> { (); }");
+            TestCompilationUnit("delegate void D<T>(T p);", "interface D<T> { (p: T); }");
+            TestCompilationUnit("delegate void D<T1, T2>(T1 p1, T2 p2);", "interface D<T1, T2> { (p1: T1, p2: T2); }");
+        }
     }
 }

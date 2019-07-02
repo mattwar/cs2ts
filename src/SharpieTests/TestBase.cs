@@ -39,7 +39,9 @@ namespace SharpieTests
 
         public void TestExpression(string csharpExpression, string expectedTypeScriptExpression)
         {
-            CheckSucceeds(TypeScriptTranslator.TranslateExpression(csharpExpression, s_References), expectedTypeScriptExpression);
+            var actual = TypeScriptTranslator.TranslateExpression(csharpExpression, s_References);
+            CheckSucceeds(actual, expectedTypeScriptExpression);
+            TypeScriptValidator.Validate("var v = " + actual.Text + ";");
         }
 
         public void TestExpressionFails(string csharpExpression, params DiagnosticDescriptor[] expectedDiagnostics)
@@ -49,7 +51,9 @@ namespace SharpieTests
 
         public void TestStatement(string csharpStatement, string expectedTypeScriptStatement)
         {
-            CheckSucceeds(TypeScriptTranslator.TranslateStatement(csharpStatement, s_References), expectedTypeScriptStatement);
+            var actual = TypeScriptTranslator.TranslateStatement(csharpStatement, s_References);
+            CheckSucceeds(actual, expectedTypeScriptStatement);
+            TypeScriptValidator.Validate(actual.Text);
         }
 
         public void TestStatementFails(string csharpStatement, params DiagnosticDescriptor[] diagnostics)
@@ -59,7 +63,9 @@ namespace SharpieTests
 
         public void TestType(string csharpType, string expectedTypeScriptType)
         {
-            CheckSucceeds(TypeScriptTranslator.TranslateType(csharpType, s_References), expectedTypeScriptType);
+            var actual = TypeScriptTranslator.TranslateType(csharpType, s_References);
+            CheckSucceeds(actual, expectedTypeScriptType);
+            TypeScriptValidator.Validate(actual + "v = null;");
         }
 
         public void TestTypeFails(string csharpType, params DiagnosticDescriptor[] diagnostics)
@@ -69,7 +75,9 @@ namespace SharpieTests
 
         public void TestCompilationUnit(string csharpText, string expectedTypeScriptText)
         {
-            CheckSucceeds(TypeScriptTranslator.TranslateCompilationUnit(csharpText, s_References), expectedTypeScriptText);
+            var actual = TypeScriptTranslator.TranslateCompilationUnit(csharpText, s_References);
+            CheckSucceeds(actual, expectedTypeScriptText);
+            TypeScriptValidator.Validate(actual.Text);
         }
 
         public void TestCompilationUnitFails(string csharpText, params DiagnosticDescriptor[] diagnostics)

@@ -742,6 +742,18 @@ namespace Sharpie
                     Visit(node.Type);
                     VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
                 }
+                else if (isInterfaceProperty)
+                {
+                    bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
+
+                    if (isReadOnly)
+                    {
+                        Write("readonly");
+                    }
+
+                    Squelch(node.Type.GetTrailingTrivia());
+                    Write(node.Identifier.Text, ":", node.Type, node.Initializer, ";");
+                }
                 else if (IsAutoProperty(node.AccessorList) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
                 {
                     bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));

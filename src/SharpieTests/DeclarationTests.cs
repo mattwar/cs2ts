@@ -23,10 +23,15 @@ namespace SharpieTests
             TestCompilationUnit(@"public interface I { }", "interface I { }");
             TestCompilationUnit(@"interface I { }", "interface I { }");
             TestCompilationUnit(@"internal interface I { }", "public interface I { }");
+        }
 
-            TestCompilationUnit("class C { class N { } }", "class C { private class N { } }");
-            TestCompilationUnit("class C { struct N { } }", "class C { private class N { } }");
-            TestCompilationUnit("class C { interface N { } }", "class C { private interface N { } }");
+        [TestMethod]
+        public void TestNestedClasses()
+        {
+            // TODO: nest classes with nested export modules
+            //TestCompilationUnit("class C { class N { } }", "class C { private class N { } }");
+            //TestCompilationUnit("class C { struct N { } }", "class C { private class N { } }");
+            //TestCompilationUnit("class C { interface N { } }", "class C { private interface N { } }");
         }
 
         [TestMethod]
@@ -218,10 +223,9 @@ namespace SharpieTests
         [TestMethod]
         public void TestInterfaceProperties()
         {
-            // looks like auto-property
-            TestCompilationUnit("interface I { int P { get; set; } }", "interface I { get P(): number; set P(value: number); }");
-            TestCompilationUnit("interface I { int P { get; } }", "interface I { get P(): number; }");
-            TestCompilationUnit("interface I { int P { set; } }", "interface I { set P(value: number); }");
+            TestCompilationUnit("interface I { int P { get; set; } }", "interface I { P: number; }");
+            TestCompilationUnit("interface I { int P { get; } }", "interface I { readonly P: number; }");
+            //TestCompilationUnit("interface I { int P { set; } }", "interface I { set P(value: number); }");
         }
 
         [TestMethod]

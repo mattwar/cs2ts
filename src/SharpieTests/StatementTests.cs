@@ -77,5 +77,14 @@ namespace SharpieTests
             TestStatement("foreach (var x in y) { }", "for (let x of y) { }");
             TestStatement("foreach (int x in y) { }", "for (let x: number of y) { }");
         }
+
+#if false
+        [TestMethod]
+        public void TestTryCatch()
+        {
+            TestStatement("try { } catch (E e) { }", "try { } catch (e: E) { }");
+            TestStatement("try { } catch { }", "try { } catch (_e) { }");
+        }
+#endif
     }
 }

@@ -1294,9 +1294,78 @@ namespace Sharpie
                     Write("}");
                 }
             }
-#endregion
 
-#region Types
+            public override void VisitTryStatement(TryStatementSyntax node)
+            {
+                Write(node.TryKeyword);
+                Visit(node.Block);
+
+
+                if (node.Catches.Count > 0)
+                {
+                    Write("(", "e", ")", "{");
+
+                    for (int i = 0; i < node.Catches.Count; i++)
+                    {
+                        var c = node.Catches[i];
+
+                        if (c.Declaration != null)
+                        {
+                            //Write("if", "(", "e", "instanceof", c.Declaration.Type, ""
+                        }
+                    }
+
+                    Write("}");
+                }
+
+
+                Visit(node.Finally);
+            }
+
+            public override void VisitCatchClause(CatchClauseSyntax node)
+            {
+                Write(node.CatchKeyword);
+
+                if (node.Declaration != null)
+                {
+                    Visit(node.Declaration);
+                }
+                else
+                {
+                    Write("(", "_e", ")");
+                }
+
+                Visit(node.Filter);
+                Visit(node.Block);
+            }
+
+            public override void VisitCatchDeclaration(CatchDeclarationSyntax node)
+            {
+                Write(node.OpenParenToken);
+                Write(node.Identifier.Text);
+
+                if (node.Type != null)
+                {
+                    Write(":");
+                    Squelch(node.Type);
+                    Visit(node.Type);
+                }
+
+                Write(node.CloseParenToken);
+            }
+
+            public override void VisitFinallyClause(FinallyClauseSyntax node)
+            {
+                Write(node.FinallyKeyword, node.Block);
+            }
+
+            public override void VisitThrowStatement(ThrowStatementSyntax node)
+            {
+                Write(node.ThrowKeyword, node.Expression, node.SemicolonToken);
+            }
+            #endregion
+
+            #region Types
             private static bool IsVarType(ExpressionSyntax expr)
             {
                 return expr is IdentifierNameSyntax id && id.Identifier.Text == "var";

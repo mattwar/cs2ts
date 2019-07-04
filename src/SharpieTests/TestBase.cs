@@ -16,7 +16,10 @@ namespace SharpieTests
                 Assert.Fail("Translation Failure: " + result.Diagnostics[0].GetMessage());
             }
 
-            Assert.AreEqual(expectedText, result.Text);
+            if (expectedText != result.Text)
+            {
+                Assert.Fail($"\n{expectedText}\n{result.Text}");
+            }
         }
 
         private void CheckFails(TranslationResult result, DiagnosticDescriptor[] expectedDiagnostics)

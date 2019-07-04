@@ -78,13 +78,32 @@ namespace SharpieTests
             TestStatement("foreach (int x in y) { }", "for (let x: number of y) { }");
         }
 
-#if false
         [TestMethod]
-        public void TestTryCatch()
+        public void TestTryCatchFinally()
         {
-            TestStatement("try { } catch (E e) { }", "try { } catch (e: E) { }");
-            TestStatement("try { } catch { }", "try { } catch (_e) { }");
+            TestStatement(
+                "try { T; } catch { C; }",
+                "try { T; } catch (_e) { C; }");
+
+            TestStatement(
+                "try { T; } catch (E e) { C; }",
+                "try { T; } catch (_e) { if (_e instanceof E) { var e = <E>_e; C; } else { throw _e; } }");
+
+            TestStatement(
+                "try { T; } catch (A) { C; }",
+                "try { T; } catch (_e) { if (_e instanceof A) { C; } else { throw _e; } }");
+
+            TestStatement(
+                "try { T; } catch (A a) { CA; } catch (B) { CB; } catch { C; }",
+                "try { T; } catch (_e) { if (_e instanceof A) { var a = <A>_e; CA; } else if (_e instanceof B) { CB; } else { C; } }");
+
+            TestStatement(
+                "try { T; } catch { C; } finally { F; }",
+                "try { T; } catch (_e) { C; } finally { F; }");
+
+            TestStatement(
+                "try { T; } finally { F; }",
+                "try { T; } finally { F; }");
         }
-#endif
     }
 }

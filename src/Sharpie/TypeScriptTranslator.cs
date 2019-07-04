@@ -160,6 +160,11 @@ namespace Sharpie
                 return info.ConvertedType;
             }
 
+            private ITypeSymbol GetType(SpecialType type)
+            {
+                return _compilation.GetSpecialType(type);
+            }
+
             #region Writing
             private SyntaxTriviaList First(params SyntaxTriviaList?[] candidates)
             {
@@ -281,14 +286,40 @@ namespace Sharpie
                 return lastLineStart;
             }
 
+            private static SyntaxTriviaList GetLeadingTrivia(object nodeOrToken)
+            {
+                switch (nodeOrToken)
+                {
+                    case SyntaxNode n:
+                        return n.GetLeadingTrivia();
+                    case SyntaxToken t:
+                        return t.LeadingTrivia;
+                    default:
+                        return SyntaxTriviaList.Empty;
+                }
+            }
+
+            private static SyntaxTriviaList GetTrailingTrivia(object nodeOrToken)
+            {
+                switch (nodeOrToken)
+                {
+                    case SyntaxNode n:
+                        return n.GetTrailingTrivia();
+                    case SyntaxToken t:
+                        return t.TrailingTrivia;
+                    default:
+                        return SyntaxTriviaList.Empty;
+                }
+            }
+
             /// <summary>
             /// Wraps the node with before & after tokens.
             /// The node's leading trivia occurs before the before-text and the trailing trivia after the after-text.
             /// </summary>
-            private void Wrap(string before, SyntaxNode node, string after)
+            private void Wrap(string before, object nodeOrToken, string after)
             {
-                var lt = node.GetLeadingTrivia();
-                var tt = node.GetTrailingTrivia();
+                var lt = GetLeadingTrivia(nodeOrToken);
+                var tt = GetTrailingTrivia(nodeOrToken);
 
                 var ltSquelched = IsSquelched(lt);
                 var ttSquelched = IsSquelched(tt);
@@ -306,7 +337,7 @@ namespace Sharpie
                     Squelch(tt);
                 }
 
-                Visit(node);
+                Write(nodeOrToken);
 
                 Write(after);
 
@@ -846,7 +877,6 @@ namespace Sharpie
             public override void VisitIndexerDeclaration(IndexerDeclarationSyntax node)
             {
                 var lt = node.GetLeadingTrivia();
-                var isInterfaceProperty = node.Parent.IsKind(SyntaxKind.InterfaceDeclaration);
 
                 if (node.ExpressionBody != null)
                 {
@@ -1312,24 +1342,71 @@ namespace Sharpie
                 Write(node.TryKeyword);
                 Visit(node.Block);
 
-
                 if (node.Catches.Count > 0)
                 {
-                    Write("(", "e", ")", "{");
+                    Write("catch ", "(", "_e", ")", "{");
+
+                    bool hadTypedCatch = false;
+                    CatchClauseSyntax catchAll = null;
 
                     for (int i = 0; i < node.Catches.Count; i++)
                     {
                         var c = node.Catches[i];
 
-                        if (c.Declaration != null)
+                        if (c.Declaration == null)
                         {
-                            //Write("if", "(", "e", "instanceof", c.Declaration.Type, ""
+                            catchAll = c;
+                            continue;
                         }
+
+                        hadTypedCatch = true;
+
+                        if (i > 0)
+                        {
+                            Write("else");
+                        }
+
+                        Squelch(c.Declaration.Type);
+                        Write("if ", "(", "_e", "instanceof", c.Declaration.Type, ")");
+                        Write("{");
+
+                        if (c.Declaration.Identifier != null && c.Declaration.Identifier.Text.Length > 0)
+                        {
+                            Write("var", c.Declaration.Identifier.Text, "=");
+                            var fromType = GetType(SpecialType.System_Object);
+                            var toType = GetType(c.Declaration.Type);
+                            WriteConversion(fromType, toType, "_e", isExplicit: true);
+                            Write(";");
+                        }
+
+                        VisitList(c.Block.Statements);
+                        Write("}");
+                    }
+
+                    if (catchAll != null)
+                    {
+                        if (hadTypedCatch)
+                        {
+                            Write("else");
+                            Write("{");
+                            VisitList(catchAll.Block.Statements);
+                            Write("}");
+                        }
+                        else
+                        {
+                            VisitList(catchAll.Block.Statements);
+                        }
+                    }
+                    else if (hadTypedCatch)
+                    {
+                        Write("else");
+                        Write("{");
+                        Write("throw", "_e", ";");
+                        Write("}");
                     }
 
                     Write("}");
                 }
-
 
                 Visit(node.Finally);
             }
@@ -1971,7 +2048,7 @@ namespace Sharpie
                 WriteConversion(fromType, toType, node.Expression, isExplicit: true);
             }
 
-            private void WriteConversion(ITypeSymbol fromType, ITypeSymbol toType, SyntaxNode node, bool isExplicit = false)
+            private void WriteConversion(ITypeSymbol fromType, ITypeSymbol toType, object nodeOrToken, bool isExplicit = false)
             {
                 var conv = _compilation.ClassifyConversion(fromType, toType);
 
@@ -1982,11 +2059,11 @@ namespace Sharpie
                     {
                         // going from floating point to integer
                         Write("Math.floor");
-                        Wrap("(", node, ")");
+                        Wrap("(", nodeOrToken, ")");
                     }
                     else
                     {
-                        Visit(node);
+                        Write(nodeOrToken);
                     }
                 }
                 else if ((conv.IsExplicit || isExplicit) && !(conv.IsIdentity || conv.IsBoxing || conv.IsNullable))
@@ -1994,11 +2071,11 @@ namespace Sharpie
                     Write("<");
                     WriteType(toType);
                     Write(">");
-                    Visit(node);
+                    Write(nodeOrToken);
                 }
                 else
                 {
-                    Visit(node);
+                    Write(nodeOrToken);
                 }
             }
 #endregion

@@ -86,6 +86,9 @@ namespace SharpieTests
             TestCompilationUnit(@"class C { public C(int p) { } }", "class C { constructor(p: number) { } }");
             TestCompilationUnit(@"class C { public C(int p1, double p2) { } }", "class C { constructor(p1: number, p2: number) { } }");
             TestCompilationUnit(@"class C { public C() => E; }", "class C { constructor() { E; } }");
+
+            // constructor with base initializer
+            TestCompilationUnit(@"class C : B { public C(int x) : base(x) { } }", "class C { constructor(x: number) { super(x); } }");
         }
 
         [TestMethod]

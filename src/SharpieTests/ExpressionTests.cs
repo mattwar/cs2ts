@@ -273,5 +273,13 @@ namespace SharpieTests
             TestStatement("var x = default(T?);", "let x = <T | null>null;");
             TestStatement("var x = default(int?);", "let x = <number | null>null;");
         }
+
+        [TestMethod]
+        public void TestBase()
+        {
+            TestCompilationUnit(
+                "class B { public virtual void M() { } } class C : B { public override void M() { base.M(); } }",
+                "class B { M() { } } class C extends B { M() { super.M(); } }");
+        }
     }
 }

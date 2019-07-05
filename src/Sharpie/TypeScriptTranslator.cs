@@ -425,7 +425,7 @@ namespace Sharpie
             {
                 if (node != null)
                 {
-                    _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.Kind().ToString()));
+                    NotSupported(node);
 
 #if false
                     // default visit this sucker!
@@ -442,6 +442,11 @@ namespace Sharpie
                     }
 #endif
                 }
+            }
+
+            private void NotSupported(SyntaxNodeOrToken node)
+            {
+                _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.Kind().ToString()));
             }
 
             private void VisitList<T>(SyntaxList<T> list) where T : SyntaxNode
@@ -467,7 +472,7 @@ namespace Sharpie
                 }
             }
 
-#region Declarations
+            #region Declarations
             public override void VisitCompilationUnit(CompilationUnitSyntax node)
             {
                 VisitList(node.Members);
@@ -643,8 +648,33 @@ namespace Sharpie
                 }
                 else
                 {
-                    Visit(node.Body);
+                    Write(node.Body.OpenBraceToken);
+
+                    if (node.Initializer != null)
+                    {
+                        Visit(node.Initializer);
+                    }
+
+                    VisitList(node.Body.Statements);
+
+                    Write(node.Body.CloseBraceToken);
                     Write(node.SemicolonToken);
+                }
+            }
+
+            public override void VisitConstructorInitializer(ConstructorInitializerSyntax node)
+            {
+                if (node.ThisOrBaseKeyword.Text == "base")
+                {
+                    Write("super");
+                    Squelch(node.ArgumentList.GetTrailingTrivia());
+                    Visit(node.ArgumentList);
+                    Write(";");
+                }
+                else
+                {
+                    // not supported
+                    NotSupported(node);
                 }
             }
 
@@ -734,7 +764,7 @@ namespace Sharpie
                             break;
 
                         default:
-                            _diagnostics.Add(GetSyntaxNotSupported(mod.GetLocation(), mod.Text));
+                            NotSupported(mod);
                             break;
                     }
                 }
@@ -979,9 +1009,9 @@ namespace Sharpie
                 Write(";", "}");
                 Write(node.GetTrailingTrivia());
             }
-#endregion
+            #endregion
 
-#region Statements
+            #region Statements
             public override void VisitBlock(BlockSyntax node)
             {
                 Write(node.OpenBraceToken);
@@ -1334,7 +1364,8 @@ namespace Sharpie
 
             public override void VisitForEachVariableStatement(ForEachVariableStatementSyntax node)
             {
-                base.VisitForEachVariableStatement(node);
+                // probably can support some of this
+                NotSupported(node);
             }
 
             private void VisitBlock(StatementSyntax statement)
@@ -1702,7 +1733,7 @@ namespace Sharpie
 
 #endregion
 
-#region Literals
+            #region Literals
             public override void VisitLiteralExpression(LiteralExpressionSyntax node)
             {
                 switch (node.Kind())
@@ -1761,7 +1792,7 @@ namespace Sharpie
                         break;
 
                     default:
-                        _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
+                        NotSupported(node);
                         Write(node.ToString());
                         break;
                 }
@@ -1805,9 +1836,9 @@ namespace Sharpie
 
                 return builder.ToString();
             }
-#endregion
+            #endregion
 
-#region Expressions
+            #region Expressions
             public override void VisitArrayRankSpecifier(ArrayRankSpecifierSyntax node)
             {
                 Write(node.OpenBracketToken);
@@ -2050,7 +2081,7 @@ namespace Sharpie
 
             public override void VisitBaseExpression(BaseExpressionSyntax node)
             {
-                base.VisitBaseExpression(node);
+                Write(node.GetLeadingTrivia(), "super", node.GetTrailingTrivia());
             }
 
             public override void VisitCastExpression(CastExpressionSyntax node)

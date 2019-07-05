@@ -253,5 +253,25 @@ namespace SharpieTests
             // identity
             TestCompilationUnit("class C { public void M() { C b = null; C a = (C)b; } }", "class C { M() { let b: C = null; let a = b; } }");
         }
+
+        [TestMethod]
+        public void TestDefault()
+        {
+            TestStatement("int x = default;", "let x = 0;");
+            TestStatement("double x = default;", "let x = 0;");
+            TestStatement("string x = default;", "let x: string = null;");
+            TestStatement("bool x = default;", "let x = false;");
+            TestStatement("T x = default;", "let x: T = null;");
+            TestStatement("T? x = default;", "let x: T | null = null;");
+            TestStatement("int? x = default;", "let x: number | null = null;");
+
+            TestStatement("var x = default(int);", "let x = 0;");
+            TestStatement("var x = default(double);", "let x = 0;");
+            TestStatement("var x = default(string);", "let x = <string>null;");
+            TestStatement("var x = default(bool);", "let x = false;");
+            TestStatement("var x = default(T);", "let x = <T>null;");
+            TestStatement("var x = default(T?);", "let x = <T | null>null;");
+            TestStatement("var x = default(int?);", "let x = <number | null>null;");
+        }
     }
 }

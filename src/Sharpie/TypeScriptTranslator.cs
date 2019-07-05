@@ -1020,11 +1020,17 @@ namespace Sharpie
                 VisitList(node.Variables);
             }
 
+            private bool IsUntyped(ExpressionSyntax expr)
+            {
+                return expr.IsKind(SyntaxKind.NullLiteralExpression)
+                    || (expr.IsKind(SyntaxKind.DefaultLiteralExpression) && GetDefaultForType(GetConvertedType(expr).SpecialType) == "null");
+            }
+
             public override void VisitVariableDeclarator(VariableDeclaratorSyntax node)
             {
                 if (node.Initializer != null)
                 {
-                    if (node.Initializer.Value.IsKind(SyntaxKind.NullLiteralExpression))
+                    if (IsUntyped(node.Initializer.Value) || node.IsMissing)
                     {
                         Squelch(node.Identifier.TrailingTrivia);
                         Write(node.Identifier);
@@ -1068,28 +1074,36 @@ namespace Sharpie
             {
                 if (GetSymbol(type) is INamedTypeSymbol symbol)
                 {
-                    switch (symbol.SpecialType)
-                    {
-                        case SpecialType.System_Boolean:
-                            return "false";
-
-                        case SpecialType.System_Decimal:
-                        case SpecialType.System_Double:
-                        case SpecialType.System_Single:
-                        case SpecialType.System_Int16:
-                        case SpecialType.System_Int32:
-                        case SpecialType.System_Int64:
-                        case SpecialType.System_UInt16:
-                        case SpecialType.System_UInt32:
-                        case SpecialType.System_UInt64:
-                        case SpecialType.System_Byte:
-                        case SpecialType.System_SByte:
-                        case SpecialType.System_Char:
-                            return "0";
-                    }
+                    return GetDefaultForType(symbol.SpecialType);
                 }
 
                 return "null";
+            }
+
+            private string GetDefaultForType(SpecialType type)
+            {
+                switch (type)
+                {
+                    case SpecialType.System_Boolean:
+                        return "false";
+
+                    case SpecialType.System_Decimal:
+                    case SpecialType.System_Double:
+                    case SpecialType.System_Single:
+                    case SpecialType.System_Int16:
+                    case SpecialType.System_Int32:
+                    case SpecialType.System_Int64:
+                    case SpecialType.System_UInt16:
+                    case SpecialType.System_UInt32:
+                    case SpecialType.System_UInt64:
+                    case SpecialType.System_Byte:
+                    case SpecialType.System_SByte:
+                    case SpecialType.System_Char:
+                        return "0";
+
+                    default:
+                        return "null";
+                }
             }
 
             public override void VisitEqualsValueClause(EqualsValueClauseSyntax node)
@@ -1372,7 +1386,7 @@ namespace Sharpie
 
                         if (c.Declaration.Identifier != null && c.Declaration.Identifier.Text.Length > 0)
                         {
-                            Write("var", c.Declaration.Identifier.Text, "=");
+                            Write("let", c.Declaration.Identifier.Text, "=");
                             var fromType = GetType(SpecialType.System_Object);
                             var toType = GetType(c.Declaration.Type);
                             WriteConversion(fromType, toType, "_e", isExplicit: true);
@@ -1741,6 +1755,11 @@ namespace Sharpie
                         Write(((ushort)((char)node.Token.Value)).ToString());
                         break;
 
+                    case SyntaxKind.DefaultLiteralExpression:
+                        var type = GetConvertedType(node);
+                        Write(GetDefaultForType(type.SpecialType));
+                        break;
+
                     default:
                         _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.ToString()));
                         Write(node.ToString());
@@ -2078,9 +2097,23 @@ namespace Sharpie
                     Write(nodeOrToken);
                 }
             }
-#endregion
 
-#region API Translations
+            public override void VisitDefaultExpression(DefaultExpressionSyntax node)
+            {
+                var def = GetDefaultForType(node.Type);
+
+                if (def == "null")
+                {
+                    Write("<", node.Type, ">", "null");
+                }
+                else
+                {
+                    Write(def);
+                }
+            }
+            #endregion
+
+            #region API Translations
 
             private Action<InvocationExpressionSyntax> GetInvocationTranslator(IMethodSymbol method)
             {

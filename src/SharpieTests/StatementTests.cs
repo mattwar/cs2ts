@@ -87,7 +87,7 @@ namespace SharpieTests
 
             TestStatement(
                 "try { T; } catch (E e) { C; }",
-                "try { T; } catch (_e) { if (_e instanceof E) { var e = <E>_e; C; } else { throw _e; } }");
+                "try { T; } catch (_e) { if (_e instanceof E) { let e = <E>_e; C; } else { throw _e; } }");
 
             TestStatement(
                 "try { T; } catch (A) { C; }",
@@ -95,7 +95,7 @@ namespace SharpieTests
 
             TestStatement(
                 "try { T; } catch (A a) { CA; } catch (B) { CB; } catch { C; }",
-                "try { T; } catch (_e) { if (_e instanceof A) { var a = <A>_e; CA; } else if (_e instanceof B) { CB; } else { C; } }");
+                "try { T; } catch (_e) { if (_e instanceof A) { let a = <A>_e; CA; } else if (_e instanceof B) { CB; } else { C; } }");
 
             TestStatement(
                 "try { T; } catch { C; } finally { F; }",

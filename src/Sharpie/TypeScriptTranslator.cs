@@ -231,8 +231,37 @@ namespace Sharpie
                 Visit(node.BaseList);
 
                 Write(node.OpenBraceToken);
-                VisitList(node.Members);
+                VisitDeclarationMembers(node.Members);
                 Write(node.CloseBraceToken);
+            }
+
+            private void VisitDeclarationMembers(SyntaxList<MemberDeclarationSyntax> members)
+            {
+                var constructors = members.OfType<ConstructorDeclarationSyntax>().ToList();
+
+                // write in order
+                bool constructorsWritten = false;
+                foreach (var m in members)
+                {
+                    if (m is ConstructorDeclarationSyntax && !constructorsWritten)
+                    {
+                        WriteConstructors(constructors);
+                        constructorsWritten = true;
+                    }
+                    else
+                    {
+                        Visit(m);
+                    }
+                }
+            }
+
+            private void WriteConstructors(List<ConstructorDeclarationSyntax> cons)
+            {
+                // TODO: merge into single constructor
+                foreach (var c in cons)
+                {
+                    Visit(c);
+                }
             }
 
             public override void VisitStructDeclaration(StructDeclarationSyntax node)

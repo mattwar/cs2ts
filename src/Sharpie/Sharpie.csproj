@@ -186,6 +186,7 @@
     <Compile Include="SyntaxExtensions.cs" />
     <Compile Include="TypeScriptTranslator.cs" />
     <Compile Include="TypeScriptTranslator_API.cs" />
+    <Compile Include="TypeScriptTranslator_Writing.cs" />
     <Compile Include="TypeScriptWriter.cs" />
   </ItemGroup>
   <ItemGroup>

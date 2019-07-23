@@ -167,7 +167,7 @@ namespace SharpieTests
         [TestMethod]
         public void TestMethodNotSupported()
         {
-            TestExpressionFails("System.Environment.Exit(0)", MethodNotSupported);
+            TestExpressionFails("System.Environment.Exit(0)", APINotSupported);
         }
 
         [TestMethod]

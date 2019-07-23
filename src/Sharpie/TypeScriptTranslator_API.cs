@@ -9,6 +9,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using E = System.Linq.Expressions;
+using R = System.Reflection;
 
 namespace Sharpie
 {
@@ -16,28 +17,56 @@ namespace Sharpie
     {
         private partial class Translator : CSharpSyntaxVisitor
         {
-            private Action<InvocationExpressionSyntax> GetInvocationTranslator(IMethodSymbol method)
+            private abstract class Translation
+            {
+                public abstract ISymbol Symbol { get; }
+                public abstract void Translate(SyntaxNode syntax);
+            }
+
+            private class Translation<TSyntax> : Translation where TSyntax : SyntaxNode
+            {
+                public override ISymbol Symbol { get; }
+                public Action<TSyntax> Translator;
+
+                public Translation(ISymbol symbol, Action<TSyntax> translator)
+                {
+                    this.Symbol = symbol;
+                    this.Translator = translator;
+                }
+
+                public override void Translate(SyntaxNode syntax)
+                {
+                    this.Translator((TSyntax)syntax);
+                }
+            }
+
+            private Translation GetTranslator(ISymbol symbol)
             {
                 InitTranslations();
 
-                if (method.IsGenericMethod)
+                if (symbol is IMethodSymbol method)
                 {
-                    method = method.ConstructedFrom;
+                    if (method.IsGenericMethod)
+                    {
+                        symbol = method.ConstructedFrom;
+                    }
                 }
 
-                var its = _invocationTranslations[method.Name];
-
-                var it = its.FirstOrDefault(m => m.Symbol.Equals(method));
-                return it?.Translator;
+                _translations.TryGetValue(symbol, out var translation);
+                return translation;
             }
 
-            private InvocationTranslation TranslateInvocation(E.Expression<Func<object>> lambda, Action<InvocationExpressionSyntax> translator)
+            private Translation TranslateInvocation(E.Expression<Func<object>> lambda, Action<InvocationExpressionSyntax> translator)
             {
-                var method = GetExampleMethod(_compilation, lambda);
-                return new InvocationTranslation(method, translator);
+                return new Translation<InvocationExpressionSyntax>(GetSymbol(_compilation, lambda), translator);
             }
 
-            private static IMethodSymbol GetExampleMethod(Compilation compilation, E.Expression<Func<object>> expr)
+            private Translation TranslateMemberAccess(E.Expression<Func<object>> lambda, Action<MemberAccessExpressionSyntax> translator)
+            {
+                return new Translation<MemberAccessExpressionSyntax>(GetSymbol(_compilation, lambda), translator);
+            }
+
+            private static ISymbol GetSymbol(Compilation compilation, E.Expression<Func<object>> expr)
             {
                 var body = expr.Body;
 
@@ -50,21 +79,15 @@ namespace Sharpie
                     var meth = mc.Method.GetBaseDefinition();
                     return SymbolMapper.GetMethodSymbol(compilation, meth);
                 }
+                else if (body is E.MemberExpression mx)
+                {
+                    if (mx.Member is R.PropertyInfo pi)
+                    {
+                        return SymbolMapper.GetPropertySymbol(compilation, pi);
+                    }
+                }
 
                 return null;
-            }
-
-            private class InvocationTranslation
-            {
-                public IMethodSymbol Symbol { get; }
-
-                public Action<InvocationExpressionSyntax> Translator;
-
-                public InvocationTranslation(IMethodSymbol symbol, Action<InvocationExpressionSyntax> translator)
-                {
-                    this.Symbol = symbol;
-                    this.Translator = translator;
-                }
             }
 
             private void RenameInvocation(string name, InvocationExpressionSyntax invocation)
@@ -99,15 +122,18 @@ namespace Sharpie
                 Write(invocation.ArgumentList.CloseParenToken);
             }
 
-            private ILookup<string, InvocationTranslation> _invocationTranslations;
+            private Dictionary<ISymbol, Translation> _translations;
 
             private void InitTranslations()
             {
-                if (_invocationTranslations != null)
+                if (_translations != null)
                     return;
 
-                var invocationTranslations = new InvocationTranslation[]
+                _translations = new Translation[]
                 {
+                    TranslateMemberAccess(() => "".Length,
+                        ma => Write(ma.Expression, ma.OperatorToken, "length")),
+
                     TranslateInvocation(() => string.Concat((string)null, (string)null), inv =>
                         WriteFirstArgInvocation("concat", inv)),
 
@@ -128,9 +154,7 @@ namespace Sharpie
                         VisitList(inv.ArgumentList.Arguments);
                         Write(inv.ArgumentList.CloseParenToken);
                     })
-                };
-
-                _invocationTranslations = invocationTranslations.ToLookup(m => m.Symbol.Name);
+                }.ToDictionary(t => t.Symbol);
             }
         }
     }

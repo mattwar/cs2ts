@@ -95,8 +95,8 @@ namespace Sharpie
         public static readonly DiagnosticDescriptor TypeNotSupported = new DiagnosticDescriptor(
             "CS2TS002", "Type Not Supported", "The type '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
 
-        public static readonly DiagnosticDescriptor MethodNotSupported = new DiagnosticDescriptor(
-            "CS2TS003", "Method Not Supported", "The API method '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
+        public static readonly DiagnosticDescriptor APINotSupported = new DiagnosticDescriptor(
+            "CS2TS003", "Method Not Supported", "The API '{0}' is not supported for translation to TypeScript", "TypeScript Translation", DiagnosticSeverity.Error, isEnabledByDefault: true);
 
         public static Diagnostic GetSyntaxNotSupported(Location location, string syntax)
         {
@@ -108,9 +108,9 @@ namespace Sharpie
             return Diagnostic.Create(TypeNotSupported, location, typeName);
         }
 
-        public static Diagnostic GetMethodNotSupported(Location location, string methodName)
+        public static Diagnostic GetAPINotSupported(Location location, string methodName)
         {
-            return Diagnostic.Create(MethodNotSupported, location, methodName);
+            return Diagnostic.Create(APINotSupported, location, methodName);
         }
         #endregion
 
@@ -231,37 +231,8 @@ namespace Sharpie
                 Visit(node.BaseList);
 
                 Write(node.OpenBraceToken);
-                VisitDeclarationMembers(node.Members);
+                VisitList(node.Members);
                 Write(node.CloseBraceToken);
-            }
-
-            private void VisitDeclarationMembers(SyntaxList<MemberDeclarationSyntax> members)
-            {
-                var constructors = members.OfType<ConstructorDeclarationSyntax>().ToList();
-
-                // write in order
-                bool constructorsWritten = false;
-                foreach (var m in members)
-                {
-                    if (m is ConstructorDeclarationSyntax && !constructorsWritten)
-                    {
-                        WriteConstructors(constructors);
-                        constructorsWritten = true;
-                    }
-                    else
-                    {
-                        Visit(m);
-                    }
-                }
-            }
-
-            private void WriteConstructors(List<ConstructorDeclarationSyntax> cons)
-            {
-                // TODO: merge into single constructor
-                foreach (var c in cons)
-                {
-                    Visit(c);
-                }
             }
 
             public override void VisitStructDeclaration(StructDeclarationSyntax node)
@@ -407,31 +378,71 @@ namespace Sharpie
                 }
             }
 
+            private bool IsFactoryConstructor(ConstructorDeclarationSyntax decl)
+            {
+                return decl.Initializer != null
+                    && decl.Initializer.ThisOrBaseKeyword.IsKind(SyntaxKind.ThisKeyword)
+                    && !decl.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) // must be non-static constructor
+                    && decl.ExpressionBody == null // cannot have expression body
+                    && decl.Body.Statements.Count == 0; // cannot have any statements
+            }
+
+            private bool IsFactoryConstructor(IMethodSymbol method)
+            {
+                return method.MethodKind == MethodKind.Constructor 
+                    && method.DeclaringSyntaxReferences.Any(d => d.GetSyntax() is ConstructorDeclarationSyntax cd && IsFactoryConstructor(cd));
+            }
+
+            private static readonly string ConstructorFactoryName = "Create";
+
             public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
             {
+                Write(GetLeadingTrivia(node), squelch: true);
                 WriteDeclarationModifiers(node.Modifiers, node.Parent);
 
-                WriteToken(node.Identifier.LeadingTrivia, "constructor", node.Identifier.TrailingTrivia);
-
-                Visit(node.ParameterList);
-
-                if (node.ExpressionBody != null)
+                if (IsFactoryConstructor(node))
                 {
-                    VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: true);
-                }
-                else
-                {
+                    Write("static");
+
+                    WriteToken(node.Identifier.LeadingTrivia, ConstructorFactoryName, node.Identifier.TrailingTrivia);
+                    Squelch(node.ParameterList);
+                    Visit(node.ParameterList);
+                    Write(":", node.Identifier.Text);
+
                     Write(node.Body.OpenBraceToken);
 
-                    if (node.Initializer != null)
-                    {
-                        Visit(node.Initializer);
-                    }
-
-                    VisitList(node.Body.Statements);
+                    Write("return", "new", "this");
+                    Squelch(node.Initializer.ArgumentList);
+                    Visit(node.Initializer.ArgumentList);
+                    Write(";");
 
                     Write(node.Body.CloseBraceToken);
                     Write(node.SemicolonToken);
+                }
+                else
+                {
+                    WriteToken(node.Identifier.LeadingTrivia, "constructor", node.Identifier.TrailingTrivia);
+
+                    Visit(node.ParameterList);
+
+                    if (node.ExpressionBody != null)
+                    {
+                        VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: true);
+                    }
+                    else
+                    {
+                        Write(node.Body.OpenBraceToken);
+
+                        if (node.Initializer != null)
+                        {
+                            Visit(node.Initializer);
+                        }
+
+                        VisitList(node.Body.Statements);
+
+                        Write(node.Body.CloseBraceToken);
+                        Write(node.SemicolonToken);
+                    }
                 }
             }
 
@@ -1685,6 +1696,9 @@ namespace Sharpie
 
             public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
             {
+                if (TrySpecialTranslation(node))
+                    return;
+
                 Visit(node.Expression);
                 Write(node.OperatorToken);
                 Visit(node.Name);
@@ -1692,6 +1706,9 @@ namespace Sharpie
 
             public override void VisitElementAccessExpression(ElementAccessExpressionSyntax node)
             {
+                if (TrySpecialTranslation(node))
+                    return;
+
                 Visit(node.Expression);
 
                 if (GetSymbol(node) is IPropertySymbol ps)
@@ -1761,28 +1778,26 @@ namespace Sharpie
 
             public override void VisitInvocationExpression(InvocationExpressionSyntax node)
             {
-                if (!TryVisitSpecialMethodInvocation(node))
-                {
-                    Visit(node.Expression);
-                    Visit(node.ArgumentList);
-                }
+                if (TrySpecialTranslation(node))
+                    return;
+
+                Visit(node.Expression);
+                Visit(node.ArgumentList);
             }
 
-            private bool TryVisitSpecialMethodInvocation(InvocationExpressionSyntax node)
+            private bool TrySpecialTranslation(ExpressionSyntax node)
             {
-                // TODO: handle extension method invocation?
-
-                if (GetSymbol(node) is IMethodSymbol ms
-                    && ms.Locations.Length > 0 && !ms.Locations[0].IsInSource)
+                if (GetSymbol(node) is ISymbol symbol
+                    && symbol.Locations.Length > 0 && !symbol.Locations[0].IsInSource)
                 {
-                    var translator = GetInvocationTranslator(ms);
+                    var translator = GetTranslator(symbol);
                     if (translator != null)
                     {
-                        translator(node);
+                        translator.Translate(node);
                         return true;
                     }
 
-                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.ToDisplayString()));
+                    _diagnostics.Add(GetAPINotSupported(node.GetLocation(), symbol.ToDisplayString()));
                 }
 
                 return false;
@@ -1862,7 +1877,7 @@ namespace Sharpie
                 if (GetSymbol(node) is IMethodSymbol ms)
                 {
                     // TODO: handle user defined conversion...
-                    _diagnostics.Add(GetMethodNotSupported(node.GetLocation(), ms.ToDisplayString()));
+                    _diagnostics.Add(GetAPINotSupported(node.GetLocation(), ms.ToDisplayString()));
                 }
 
                 var fromType = GetType(node.Expression);

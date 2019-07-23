@@ -89,6 +89,12 @@ namespace SharpieTests
 
             // constructor with base initializer
             TestCompilationUnit(@"class C : B { public C(int x) : base(x) { } }", "class C { constructor(x: number) { super(x); } }");
+
+            // constructor with this initializer
+            TestCompilationUnit(
+                "class C { public C(int x) { } public C(string y) : this(y.Length) { } }",
+                "class C { constructor(x: number) { } static Create(y: string): C { return new this(y.length); } }"
+                );
         }
 
         [TestMethod]

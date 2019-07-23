@@ -81,6 +81,7 @@ namespace Sharpie
         public static IMethodSymbol GetMethodSymbol(Compilation compilation, MethodInfo method)
         {
             var methodMap = methodMapMap.GetOrCreateValue(compilation);
+
             if (!methodMap.TryGetValue(method, out var methodSymbol))
             {
                 methodSymbol = CreateMethodSymbol();
@@ -124,6 +125,27 @@ namespace Sharpie
             }
 
             return true;
+        }
+
+        private static ConditionalWeakTable<Compilation, Dictionary<PropertyInfo, IPropertySymbol>> propertyMapMap
+            = new ConditionalWeakTable<Compilation, Dictionary<PropertyInfo, IPropertySymbol>>();
+
+        public static IPropertySymbol GetPropertySymbol(Compilation compilation, PropertyInfo propInfo)
+        {
+            var propertyMap = propertyMapMap.GetOrCreateValue(compilation);
+
+            if (!propertyMap.TryGetValue(propInfo, out var propertySymbol))
+            {
+                var typeSymbol = GetTypeSymbol(compilation, propInfo.DeclaringType);
+                propertySymbol = typeSymbol.GetMembers(propInfo.Name).OfType<IPropertySymbol>().FirstOrDefault();
+
+#if DEBUG
+                if (propertySymbol != null)
+#endif
+                    propertyMap.Add(propInfo, propertySymbol);
+            }
+
+            return propertySymbol;
         }
     }
 }

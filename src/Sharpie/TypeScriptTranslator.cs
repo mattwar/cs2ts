@@ -64,7 +64,7 @@ namespace Sharpie
             var tree = CSharpSyntaxTree.ParseText(csharpText);
             var compilation = CSharpCompilation.Create("source", new[] { tree }, references);
             var localDecl = (LocalDeclarationStatementSyntax)tree.GetRoot().DescendantNodes().First(n => n.IsKind(SyntaxKind.LocalDeclarationStatement));
-            var expr = localDecl.Declaration.Variables[0].Initializer.Value;
+            var expr = localDecl.Declaration.Variables[0].Initializer!.Value;
             return Translate(compilation, expr);
         }
 
@@ -74,7 +74,7 @@ namespace Sharpie
             var tree = CSharpSyntaxTree.ParseText(csharpText);
             var compilation = CSharpCompilation.Create("source", new[] { tree }, references);
             var methodDecl = (MethodDeclarationSyntax)tree.GetRoot().DescendantNodes().First(n => n.IsKind(SyntaxKind.MethodDeclaration));
-            var statement = methodDecl.Body.Statements[0];
+            var statement = methodDecl.Body!.Statements[0];
             return Translate(compilation, statement);
         }
 
@@ -139,7 +139,7 @@ namespace Sharpie
                 return model;
             }
 
-            private ISymbol GetSymbol(ExpressionSyntax expr)
+            private ISymbol? GetSymbol(ExpressionSyntax expr)
             {
                 var model = GetModel(expr.SyntaxTree);
                 var info = model.GetSymbolInfo(expr);
@@ -150,14 +150,14 @@ namespace Sharpie
             {
                 var model = GetModel(expr.SyntaxTree);
                 var info = model.GetTypeInfo(expr);
-                return info.Type;
+                return info.Type!;
             }
 
             private ITypeSymbol GetConvertedType(ExpressionSyntax expr)
             {
                 var model = GetModel(expr.SyntaxTree);
                 var info = model.GetTypeInfo(expr);
-                return info.ConvertedType;
+                return info.ConvertedType!;
             }
 
             private ITypeSymbol GetType(SpecialType type)
@@ -190,7 +190,7 @@ namespace Sharpie
 
             private void NotSupported(SyntaxNodeOrToken node)
             {
-                _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation(), node.Kind().ToString()));
+                _diagnostics.Add(GetSyntaxNotSupported(node.GetLocation()!, node.Kind().ToString()));
             }
 
             private void VisitList<T>(SyntaxList<T> list) where T : SyntaxNode
@@ -312,7 +312,7 @@ namespace Sharpie
                 }
             }
 
-            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, SyntaxNode container)
+            private void WriteDeclarationModifiers(SyntaxTokenList modifiers, SyntaxNode? container)
             {
                 var hasAccessModifiers = modifiers.Any(m => IsAccessModifier(m));
                 var hasModifiers = modifiers.Count > 0;
@@ -384,7 +384,7 @@ namespace Sharpie
                     && decl.Initializer.ThisOrBaseKeyword.IsKind(SyntaxKind.ThisKeyword)
                     && !decl.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)) // must be non-static constructor
                     && decl.ExpressionBody == null // cannot have expression body
-                    && decl.Body.Statements.Count == 0; // cannot have any statements
+                    && (decl.Body == null || decl.Body.Statements.Count == 0); // cannot have any statements
             }
 
             private bool IsFactoryConstructor(IMethodSymbol method)
@@ -409,10 +409,10 @@ namespace Sharpie
                     Visit(node.ParameterList);
                     Write(":", node.Identifier.Text);
 
-                    Write(node.Body.OpenBraceToken);
+                    Write(node.Body!.OpenBraceToken);
 
                     Write("return", "new", "this");
-                    Squelch(node.Initializer.ArgumentList);
+                    Squelch(node.Initializer!.ArgumentList);
                     Visit(node.Initializer.ArgumentList);
                     Write(";");
 
@@ -431,7 +431,7 @@ namespace Sharpie
                     }
                     else
                     {
-                        Write(node.Body.OpenBraceToken);
+                        Write(node.Body!.OpenBraceToken);
 
                         if (node.Initializer != null)
                         {
@@ -589,7 +589,7 @@ namespace Sharpie
                 }
                 else if (isInterfaceProperty)
                 {
-                    bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
+                    bool isReadOnly = !node.AccessorList!.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
 
                     if (isReadOnly)
                     {
@@ -597,9 +597,9 @@ namespace Sharpie
                     }
 
                     Squelch(node.Type.GetTrailingTrivia());
-                    Write(node.Identifier.Text, ":", node.Type, node.Initializer, ";");
+                    Write(node.Identifier.Text, ":", node.Type, node.Initializer!, ";");
                 }
-                else if (IsAutoProperty(node.AccessorList) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
+                else if (node.AccessorList != null && IsAutoProperty(node.AccessorList) && !IsAbstract(node.Modifiers) && !isInterfaceProperty)
                 {
                     bool isReadOnly = !node.AccessorList.Accessors.Any(a => a.IsKind(SyntaxKind.SetAccessorDeclaration));
 
@@ -652,7 +652,7 @@ namespace Sharpie
                         Write(node.Identifier.Text, ":", node.Type, node.Initializer, ";");
                     }
                 }
-                else
+                else if (node.AccessorList != null)
                 {
                     // translate accessors
                     for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
@@ -703,7 +703,7 @@ namespace Sharpie
                     Visit(node.Type);
                     VisitExpressionBody(node.ExpressionBody, node.SemicolonToken, isVoid: false);
                 }
-                else
+                else if (node.AccessorList != null)
                 {
                     // translate accessors
                     for (int i = 0; i < node.AccessorList.Accessors.Count; i++)
@@ -770,9 +770,10 @@ namespace Sharpie
                 return modifiers.Any(m => m.IsKind(SyntaxKind.OverrideKeyword));
             }
 
-            private static bool IsAutoProperty(AccessorListSyntax accessors)
+            private static bool IsAutoProperty(AccessorListSyntax? accessors)
             {
-                return accessors.Accessors.All(a => !HasBody(a));
+                return accessors != null
+                    && accessors.Accessors.All(a => !HasBody(a));
             }
 
             private static bool HasBody(AccessorDeclarationSyntax acc)
@@ -1176,7 +1177,7 @@ namespace Sharpie
                     Write("catch ", "(", "_e", ")", "{");
 
                     bool hadTypedCatch = false;
-                    CatchClauseSyntax catchAll = null;
+                    CatchClauseSyntax? catchAll = null;
 
                     for (int i = 0; i < node.Catches.Count; i++)
                     {
@@ -1199,7 +1200,7 @@ namespace Sharpie
                         Write("if ", "(", "_e", "instanceof", c.Declaration.Type, ")");
                         Write("{");
 
-                        if (c.Declaration.Identifier != null && c.Declaration.Identifier.Text.Length > 0)
+                        if (c.Declaration?.Identifier != null && c.Declaration.Identifier.Text.Length > 0)
                         {
                             Write("let", c.Declaration.Identifier.Text, "=");
                             var fromType = GetType(SpecialType.System_Object);
@@ -1506,7 +1507,7 @@ namespace Sharpie
                 {
                     if (nodeOrToken.IsNode)
                     {
-                        Visit((TypeSyntax)nodeOrToken.AsNode());
+                        Visit((TypeSyntax)nodeOrToken.AsNode()!);
                     }
                     else
                     {
@@ -1567,7 +1568,7 @@ namespace Sharpie
                         break;
 
                     case SyntaxKind.CharacterLiteralExpression:
-                        Write(((ushort)((char)node.Token.Value)).ToString());
+                        Write(((ushort)((char)node.Token.Value!)).ToString());
                         break;
 
                     case SyntaxKind.DefaultLiteralExpression:
@@ -1840,9 +1841,16 @@ namespace Sharpie
 
             public override void VisitArrayCreationExpression(ArrayCreationExpressionSyntax node)
             {
-                WriteToken(node.NewKeyword.LeadingTrivia, "[", node.Initializer.OpenBraceToken.TrailingTrivia);
-                VisitList(node.Initializer.Expressions);
-                WriteToken(node.Initializer.CloseBraceToken.LeadingTrivia, "]", node.Initializer.CloseBraceToken.TrailingTrivia);
+                if (node.Initializer != null)
+                {
+                    WriteToken(node.NewKeyword.LeadingTrivia, "[", node.Initializer.OpenBraceToken.TrailingTrivia);
+                    VisitList(node.Initializer.Expressions);
+                    WriteToken(node.Initializer.CloseBraceToken.LeadingTrivia, "]", node.Initializer.CloseBraceToken.TrailingTrivia);
+                }
+                else
+                {
+                    throw new NotImplementedException();
+                }
             }
 
             public override void VisitImplicitArrayCreationExpression(ImplicitArrayCreationExpressionSyntax node)

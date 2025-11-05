@@ -26,9 +26,6 @@ namespace Sharpie
             if (!typeMap.TryGetValue(type, out var typeSymbol))
             {
                 typeSymbol = CreateTypeSymbol();
-#if DEBUG
-                if (typeSymbol != null)
-#endif
                 typeMap.Add(type, typeSymbol);
             }
 
@@ -38,18 +35,18 @@ namespace Sharpie
             {
                 if (type.IsArray)
                 {
-                    var elementSymbol = GetTypeSymbol(compilation, type.GetElementType());
+                    var elementSymbol = GetTypeSymbol(compilation, type.GetElementType()!)!;
                     return compilation.CreateArrayTypeSymbol(elementSymbol, type.GetArrayRank());
                 }
                 else if (type.IsConstructedGenericType)
                 {
-                    var typeDefSymbol = GetTypeSymbol(compilation, type.GetGenericTypeDefinition());
+                    var typeDefSymbol = GetTypeSymbol(compilation, type.GetGenericTypeDefinition())!;
                     var typeArgs = GetTypeSymbols(compilation, type.GetGenericArguments());
                     return ((INamedTypeSymbol)typeDefSymbol).Construct(typeArgs);
                 }
                 else if (type.DeclaringType != null)
                 {
-                    var declaringTypeSymbol = GetTypeSymbol(compilation, type.DeclaringType);
+                    var declaringTypeSymbol = GetTypeSymbol(compilation, type.DeclaringType)!;
                     var typeArgumentCount = type.IsGenericType ? type.GenericTypeArguments.Length : 0;
 
                     foreach (var nestedType in declaringTypeSymbol.GetTypeMembers(type.Name))
@@ -61,18 +58,19 @@ namespace Sharpie
                         }
                     }
 
-                    return null;
+                    throw new InvalidOperationException($"Could not create symbol for nested type '{type.Name}'.");
                 }
                 else
                 {
-                    return compilation.GetTypeByMetadataName(type.FullName);
+                    return compilation.GetTypeByMetadataName(type.FullName!)
+                        ?? throw new InvalidOperationException($"Could not find symbol for type '{type.FullName!}'.");
                 }
             }
         }
 
         public static ITypeSymbol[] GetTypeSymbols(Compilation compilation, Type[] types)
         {
-            return types.Select(t => GetTypeSymbol(compilation, t)).ToArray();
+            return types.Select(t => GetTypeSymbol(compilation, t)!).ToArray();
         }
 
         private static ConditionalWeakTable<Compilation, Dictionary<MethodInfo, IMethodSymbol>> methodMapMap
@@ -85,9 +83,6 @@ namespace Sharpie
             if (!methodMap.TryGetValue(method, out var methodSymbol))
             {
                 methodSymbol = CreateMethodSymbol();
-#if DEBUG
-                if (methodSymbol != null)
-#endif
                 methodMap.Add(method, methodSymbol);
             }
 
@@ -95,7 +90,7 @@ namespace Sharpie
 
             IMethodSymbol CreateMethodSymbol()
             {
-                var typeSymbol = GetTypeSymbol(compilation, method.DeclaringType);
+                var typeSymbol = GetTypeSymbol(compilation, method.DeclaringType!)!;
                 var parameterTypes = GetTypeSymbols(compilation, method.GetParameters().Select(p => p.ParameterType).ToArray());
 
                 var namedMembers = typeSymbol.GetMembers(method.Name);
@@ -109,7 +104,7 @@ namespace Sharpie
                     }
                 }
 
-                return null;
+                throw new InvalidOperationException($"Cannot create method symbol for '{method.Name}'.");
             }
         }
 
@@ -120,7 +115,7 @@ namespace Sharpie
 
             for (int i = 0; i < parameters.Length; i++)
             {
-                if (!parameters[i].Type.Equals(matchTypes[i]))
+                if (!SymbolEqualityComparer.Default.Equals(parameters[i].Type, matchTypes[i]))
                     return false;
             }
 
@@ -136,16 +131,15 @@ namespace Sharpie
 
             if (!propertyMap.TryGetValue(propInfo, out var propertySymbol))
             {
-                var typeSymbol = GetTypeSymbol(compilation, propInfo.DeclaringType);
+                var typeSymbol = GetTypeSymbol(compilation, propInfo.DeclaringType!);
                 propertySymbol = typeSymbol.GetMembers(propInfo.Name).OfType<IPropertySymbol>().FirstOrDefault();
-
-#if DEBUG
                 if (propertySymbol != null)
-#endif
                     propertyMap.Add(propInfo, propertySymbol);
             }
 
-            return propertySymbol;
+            return propertySymbol != null
+                ? propertySymbol
+                : throw new InvalidOperationException("PropertySymbol not found");
         }
     }
 }

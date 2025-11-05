@@ -71,7 +71,7 @@ namespace Sharpie
             /// Write one or more nodes, tokens, trivia or text as typescript.
             /// Nodes will be visited; tokens, trivia or text written directly.
             /// </summary>
-            public void Write(params object[] nodesAndTokens)
+            public void Write(params object?[] nodesAndTokens)
             {
                 foreach (var nodeOrToken in nodesAndTokens)
                 {
@@ -83,7 +83,7 @@ namespace Sharpie
             /// Write one node, token, trivia or text as typescript.
             /// Nodes will be visited; tokens, trivia or text written directly.
             /// </summary>
-            public void Write(object nodeOrToken)
+            public void Write(object? nodeOrToken)
             {
                 switch (nodeOrToken)
                 {

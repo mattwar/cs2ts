@@ -10,6 +10,7 @@ namespace Sharpie
     {
         private readonly TextWriter _writer;
         private string _last = " ";
+        private string? _newLine;
 
         public TypeScriptWriter(TextWriter writer)
         {
@@ -138,8 +139,6 @@ namespace Sharpie
             return text.Length > 0 && char.IsWhiteSpace(text[text.Length - 1]);
         }
 
-        private string newLine;
-
         public void WriteTrivia(string trivia)
         {
             if (trivia.Length > 0)
@@ -147,8 +146,7 @@ namespace Sharpie
                 _writer.Write(trivia);
                 _last = trivia;
 
-
-                if (newLine == null)
+                if (_newLine == null)
                 {
                     // discover new line based on first written line break
                     var i = trivia.IndexOf('\n');
@@ -156,11 +154,11 @@ namespace Sharpie
                     {
                         if (i > 0 && trivia[i - 1] == '\r')
                         {
-                            newLine = "\r\n";
+                            _newLine = "\r\n";
                         }
                         else
                         {
-                            newLine = "\n";
+                            _newLine = "\n";
                         }
                     }
                 }
@@ -169,13 +167,13 @@ namespace Sharpie
 
         public void WriteLine()
         {
-            if (newLine == null)
+            if (_newLine == null)
             {
                 _writer.WriteLine();
             }
             else
             {
-                _writer.Write(newLine);
+                _writer.Write(_newLine);
             }
         }
     }

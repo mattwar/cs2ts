@@ -15,10 +15,10 @@ namespace cs2ts
     {
         static void Main(string[] args)
         {
-            var workspace = new AdhocWorkspace(DesktopMefHostServices.DefaultServices);
+            var workspace = new AdhocWorkspace(MefHostServices.DefaultHost);
             var projectInfo = CommandLineProject.CreateProjectInfo("cs2ts", LanguageNames.CSharp, args, Environment.CurrentDirectory, workspace);
             var project = workspace.AddProject(projectInfo);
-            var compilation = (CSharpCompilation)project.GetCompilationAsync().GetAwaiter().GetResult();
+            var compilation = (CSharpCompilation)project.GetCompilationAsync().GetAwaiter().GetResult()!;
             var result = TypeScriptTranslator.Translate(compilation);
 
             if (result.Diagnostics.Count > 0)

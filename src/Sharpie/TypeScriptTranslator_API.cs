@@ -40,7 +40,7 @@ namespace Sharpie
                 }
             }
 
-            private Translation GetTranslator(ISymbol symbol)
+            private Translation? GetTranslator(ISymbol symbol)
             {
                 InitTranslations();
 
@@ -52,13 +52,13 @@ namespace Sharpie
                     }
                 }
 
-                _translations.TryGetValue(symbol, out var translation);
+                _translations!.TryGetValue(symbol, out var translation);
                 return translation;
             }
 
             private Translation TranslateInvocation(E.Expression<Func<object>> lambda, Action<InvocationExpressionSyntax> translator)
             {
-                return new Translation<InvocationExpressionSyntax>(GetSymbol(_compilation, lambda), translator);
+                return new Translation<InvocationExpressionSyntax>(GetSymbol(_compilation, lambda)!, translator);
             }
 
             private Translation TranslateMemberAccess(E.Expression<Func<object>> lambda, Action<MemberAccessExpressionSyntax> translator)
@@ -87,7 +87,7 @@ namespace Sharpie
                     }
                 }
 
-                return null;
+                throw new InvalidOperationException("");
             }
 
             private void RenameInvocation(string name, InvocationExpressionSyntax invocation)
@@ -122,7 +122,7 @@ namespace Sharpie
                 Write(invocation.ArgumentList.CloseParenToken);
             }
 
-            private Dictionary<ISymbol, Translation> _translations;
+            private Dictionary<ISymbol, Translation>? _translations;
 
             private void InitTranslations()
             {
@@ -131,30 +131,36 @@ namespace Sharpie
 
                 _translations = new Translation[]
                 {
-                    TranslateMemberAccess(() => "".Length,
-                        ma => Write(ma.Expression, ma.OperatorToken, "length")),
-
-                    TranslateInvocation(() => string.Concat((string)null, (string)null), inv =>
-                        WriteFirstArgInvocation("concat", inv)),
-
-                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null), inv =>
-                        WriteFirstArgInvocation("concat", inv)),
-
-                    TranslateInvocation(() => string.Concat((string)null, (string)null, (string)null, (string)null), inv =>
-                        WriteFirstArgInvocation("concat", inv)),
-
-                    TranslateInvocation(() => string.Concat((string[])null), inv =>
-                    {
-                        Write("\"\".concat");
-                        Write(inv.ArgumentList.OpenParenToken);
-                        if (inv.ArgumentList.Arguments.Count == 1)
+                    TranslateMemberAccess(
+                        () => "".Length,
+                        ma => Write(ma.Expression, ma.OperatorToken, "length")
+                        ),
+                    TranslateInvocation(
+                        () => string.Concat((string)null!, (string)null!), 
+                        inv => WriteFirstArgInvocation("concat", inv)
+                        ),
+                    TranslateInvocation(
+                        () => string.Concat((string)null!, (string)null!, (string)null!), 
+                        inv => WriteFirstArgInvocation("concat", inv)
+                        ),
+                    TranslateInvocation(
+                        () => string.Concat((string)null!, (string)null!, (string)null!, (string)null!), 
+                        inv => WriteFirstArgInvocation("concat", inv)
+                        ),
+                    TranslateInvocation(
+                        () => string.Concat((string[])null!), 
+                        inv =>
                         {
-                            Write("...");
-                        }
-                        VisitList(inv.ArgumentList.Arguments);
-                        Write(inv.ArgumentList.CloseParenToken);
-                    })
-                }.ToDictionary(t => t.Symbol);
+                            Write("\"\".concat");
+                            Write(inv.ArgumentList.OpenParenToken);
+                            if (inv.ArgumentList.Arguments.Count == 1)
+                            {
+                                Write("...");
+                            }
+                            VisitList(inv.ArgumentList.Arguments);
+                            Write(inv.ArgumentList.CloseParenToken);
+                        })
+                }.ToDictionary(t => t.Symbol, SymbolEqualityComparer.Default);
             }
         }
     }
